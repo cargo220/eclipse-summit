@@ -48,7 +48,8 @@ def generate_launch_description():
         'tide_gps_topic',
         default_value='/gps/fix',
         description=(
-            'GPS topic subscribed by tide_watch. Does not feed EKF.'
+            'GPS topic for tide_watch only. Use /gps/fix_tide_sim to inject '
+            'a fake mudflat fix without feeding EKF.'
         ),
     )
 

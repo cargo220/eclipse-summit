@@ -52,15 +52,21 @@ def generate_launch_description():
             'enable_height_ai',
             default_value='true',
             description=(
-                'Enable height AI inside eclipse_test_controller. '
-                'Manual D-pad always wins; empty model path holds current height.'
+                'Let the height AI policy propose heights inside '
+                'eclipse_test_controller. Manual D-pad input always wins '
+                'regardless; with no model path the policy is a stub that '
+                'only ever holds the current height.'
             ),
         ),
 
         DeclareLaunchArgument(
             'height_ai_model_path',
             default_value='',
-            description='Height checkpoint JSON. Empty or invalid = stub hold.',
+            description=(
+                'Height outcome checkpoint JSON (tars-height-outcome-v1). '
+                'Empty or invalid = stub hold. A skeleton (zero weights) '
+                'loads the grid path but still holds the current height.'
+            ),
         ),
 
         DeclareLaunchArgument(
