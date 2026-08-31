@@ -280,7 +280,6 @@ behavior_server:
     cycle_frequency: 10.0
     # NavigateToPose 트리: wait + set_height + spin + backup.
     # Spin = COSTMAP 장애물에서 정지 후 60°. BackUp = STALL/SLIP 후진.
-    # mud_assess / drive_on_heading 은 이 목록에 없음.
     behavior_plugins: ["wait", "set_height", "spin", "backup"]
     wait:
       plugin: "nav2_behaviors/Wait"

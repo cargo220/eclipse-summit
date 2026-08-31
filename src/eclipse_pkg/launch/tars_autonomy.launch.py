@@ -232,16 +232,8 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 4d. Probe angle sensor (Arduino). Same wiring as the probe block in
-    # description_ai.launch.py (package/executable/parameter loading kept).
-    # Parameters come from config/probe_sensor.yaml (/dev/ttyPROBE, 115200);
-    # its top-level key is `probe_sensor`, so the node must keep exactly that
-    # name for the params to apply (probe_sensor.py's internal default name
-    # probe_sensor_node is overridden here on purpose).
-    # Publishes /probe/angle, consumed by the tars_recovery_behaviors/MudAssess
-    # recovery plugin. If the serial device is absent the node retries on its
-    # own reconnect loop; the launch still comes up (verified), so no
-    # condition is needed here.
+    # Probe. config/probe_sensor.yaml 의 키가 probe_sensor 이라 노드 이름을 맞춘다.
+    # 시리얼이 없어도 재연결을 시도하고 런치는 뜬다.
     probe_sensor_node = Node(
         package=pkg_name,
         executable='probe_sensor',

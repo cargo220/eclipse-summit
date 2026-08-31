@@ -42,7 +42,6 @@ set(dependencies
 )
 
 add_library(tars_recovery_behaviors_plugin SHARED
-  src/mud_assess.cpp
   src/set_height.cpp
   src/stall_detector.cpp
   src/slip_detector.cpp
