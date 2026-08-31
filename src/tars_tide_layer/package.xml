@@ -4,9 +4,7 @@
   <name>tars_tide_layer</name>
   <version>0.1.0</version>
   <description>
-    TARS tide-aware costmap layer. Marks water/flood areas as LETHAL_OBSTACLE
-    in global_costmap based on real-time tide prediction data from
-    /tide/water_polygon_markers (all rings).
+    Costmap layer that marks tide waterline markers as lethal obstacles.
   </description>
   <maintainer email="ley184526@icloud.com">cargo220</maintainer>
   <license>Proprietary</license>

@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>TARS mudflat rescue robot ROS 2 nodes, launch, and Nav2 config</description>
   <maintainer email="ley184526@icloud.com">cargo220</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Proprietary</license>
 
   <depend>rclpy</depend>
   <depend>nav_msgs</depend>

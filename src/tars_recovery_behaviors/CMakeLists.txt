@@ -55,21 +55,14 @@ target_include_directories(tars_recovery_behaviors_plugin PUBLIC
 target_compile_definitions(tars_recovery_behaviors_plugin
   PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS"
 )
-# BT_PLUGIN_EXPORT makes BT_REGISTER_NODES export the
-# BT_RegisterNodesFromPlugin symbol that Humble's bt_navigator resolves
-# after dlopen (BT::BehaviorTreeFactory::registerFromPlugin). Without it
-# the macro compiles to a static symbol and the BT node never registers.
+# Humble bt_navigator dlopens plugin_lib_names and needs
+# BT_RegisterNodesFromPlugin. Without BT_PLUGIN_EXPORT the symbol stays static.
 target_compile_definitions(tars_recovery_behaviors_plugin
   PRIVATE "BT_PLUGIN_EXPORT"
 )
 ament_target_dependencies(tars_recovery_behaviors_plugin ${dependencies})
 
 pluginlib_export_plugin_description_file(nav2_core tars_recovery_plugin.xml)
-# BT-plugin registration for ament-index based consumers/tools
-# (resource key behaviortree_cpp_v3__plugins). Note: Humble's bt_navigator
-# does not load BT nodes through this index — it dlopens the libraries
-# listed in its plugin_lib_names parameter (see nav2_params_mudflat.yaml)
-# and relies on the BT_RegisterNodesFromPlugin symbol above.
 pluginlib_export_plugin_description_file(behaviortree_cpp_v3 tars_bt_plugins.xml)
 
 install(TARGETS tars_recovery_behaviors_plugin

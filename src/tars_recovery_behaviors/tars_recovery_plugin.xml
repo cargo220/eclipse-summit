@@ -3,9 +3,7 @@
          type="tars_recovery_behaviors::SetHeight"
          base_class_type="nav2_core::Behavior">
     <description>
-      SetHeight: publish target height to /drive/height_step_mm during recovery,
-      then wait set_height.wait_duration seconds. Never inspects whether the
-      height was actually reached. onActionCompletion is empty.
+      Publish a height command, then wait set_height.wait_duration seconds.
     </description>
   </class>
 </library>

@@ -7,7 +7,7 @@ package_name = 'eclipse_pkg'
 setup(
     name=package_name,
     version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    packages=find_packages(),
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -23,7 +23,7 @@ setup(
     maintainer='cargo220',
     maintainer_email='ley184526@icloud.com',
     description='TARS mudflat rescue robot ROS 2 nodes and launch',
-    license='TODO: License declaration',
+    license='Proprietary',
     entry_points={
         'console_scripts': [
             'eclipse_test_controller = eclipse_pkg.eclipse_test_controller:main',

@@ -3,32 +3,29 @@
          type="tars_recovery_behaviors::StallDetector"
          base_class_type="BT::TreeNode">
     <description>
-      STALL classifier: /motor/safety_state contains "stall" in the look-back
-      window (controller WARN_STALL_* / FAULT_stall_*). Fail-open empty window.
+      STALL: /motor/safety_state contains "stall" in the look-back window.
+      Empty window does not match.
     </description>
   </class>
   <class name="SlipDetector"
          type="tars_recovery_behaviors::SlipDetector"
          base_class_type="BT::TreeNode">
     <description>
-      SLIP classifier: mean |/odom| wheel speed high while /gps/fix GNSS
-      displacement stays low (status-tier thresholds). Fail-open incomplete data.
+      SLIP: wheels turning while GNSS displacement stays low.
     </description>
   </class>
   <class name="CostmapBlockedDetector"
          type="tars_recovery_behaviors::CostmapBlockedDetector"
          base_class_type="BT::TreeNode">
     <description>
-      COSTMAP classifier: local costmap OccupancyGrid has high occupancy
-      near the robot. Fail-open if map/pose stale. Unknown cells are not blocked.
+      COSTMAP: high occupancy near the robot on the local OccupancyGrid.
     </description>
   </class>
   <class name="RecoveryAnnounce"
          type="tars_recovery_behaviors::RecoveryAnnounce"
          base_class_type="BT::TreeNode">
     <description>
-      Log + /recovery/active_branch when a recovery structure starts
-      (STALL / SLIP / COSTMAP / UNKNOWN). Always SUCCESS.
+      Log the recovery branch name. Always SUCCESS.
     </description>
   </class>
 </library>
