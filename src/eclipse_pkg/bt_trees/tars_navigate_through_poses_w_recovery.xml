@@ -16,9 +16,7 @@
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
           </RecoveryNode>
         </RateController>
-        <!-- Mirrors tars_navigate_w_recovery.xml: smooth the grid planner's
-             jagged output before handing it to the controller. Kept outside
-             the RateController so a re-planned path is always smoothed. -->
+        <!-- RateController 밖에 둔다. 재계획 path도 SmoothPath를 탄다. -->
         <SmoothPath unsmoothed_path="{path}" smoothed_path="{smoothed_path}"
                     smoother_id="simple_smoother"/>
         <RecoveryNode number_of_retries="1" name="FollowPath">
