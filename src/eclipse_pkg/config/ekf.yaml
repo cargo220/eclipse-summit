@@ -1,7 +1,7 @@
 ekf_filter_node:
   ros__parameters:
     # --- 기본 설정 ---
-    frequency: 17.0         # EKF 연산 주기 (20→17Hz, ARM 부하 완화)
+    frequency: 17.0         # EKF 연산 주기 (Hz). ARM 부하.
     two_d_mode: true         # 2D 평면 주행 로봇이므로 Z축(높이) 및 Roll, Pitch 무시
     publish_tf: true         # odom -> base_link로의 TF(Transform) 자동 발행 여부
 
@@ -72,11 +72,6 @@ ekf_filter_node:
     odom2_mahalanobis_threshold: 3.0
 
     # --- 프로세스 노이즈 공분산 (15x15) ---
-    # covariance_analyzer.py 분석 결과 기반
-    # x/y 위치: 0.000282  (정적 GPS 분산 기반)
-    # vx/vy 속도: 0.002822 (동적 오차 변화율 분산 기반)
-    # 나머지: 0.001 (일반 초기값, 실주행 후 조정 필요)
-    #
     # 순서: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
     process_noise_covariance: [0.000186, 0.0,      0.0,     0.0,     0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,
                                0.0,      0.000186, 0.0,     0.0,     0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,

@@ -1,7 +1,7 @@
 navsat_transform_node:
   ros__parameters:
     # --- 기본 설정 ---
-    # 30Hz was higher than GPS fix rate and inflated wakeups/load; try 10Hz.
+    # GPS fix보다 높은 주기는 불필요.
     frequency: 10.0
 
     # TF lookup 타임아웃. 기본 0.0은 "최신 transform만"이라 체인이 잠깐 비어도

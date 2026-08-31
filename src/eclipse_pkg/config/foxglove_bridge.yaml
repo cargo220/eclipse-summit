@@ -3,8 +3,7 @@
 /**:
   ros__parameters:
     port: 8765
-    # 글로벌 costmap 500 m @ 0.1 m OccupancyGrid ≈ 25 MB.
-    # 기본 10 MB면 foxglove_bridge가 메시지를 드롭한다. 기동 시에만 읽힘.
+    # OccupancyGrid ≈ 25 MB. 기본 10 MB면 드롭. 기동 시에만 읽힘.
     send_buffer_limit: 67108864
     min_qos_depth: 1
     max_qos_depth: 10

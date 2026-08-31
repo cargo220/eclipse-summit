@@ -1,5 +1,4 @@
 # TARS Nav2 Mapless Mudflat Configuration
-# Phase 2: GPS Waypoint Following + Rolling Costmaps + RPP Controller
 
 bt_navigator:
   ros__parameters:
@@ -129,19 +128,12 @@ controller_server:
       lookahead_time: 3.0  # 조정가능
       rotate_to_heading_angular_vel: 0.5  # 조정가능: 제자리 회전 각속도(사용 시)
       # 조정가능 — 아래 velocity_smoother 의 max_accel[2] 와 반드시 같이 바꿀 것.
-      # Humble 기본값은 3.2 라 명시하지 않으면 RPP 가 하류 smoother(0.7)보다 4.5배
-      # 큰 각가속을 명령하고 매 사이클 잘린다. 최종 명령은 smoother 가 내므로
-      # 기능상 위험하진 않지만, 값이 어긋나 있으면 "컨트롤러가 뭘 의도했는지"와
-      # "로봇이 뭘 받았는지"가 달라져 튜닝할 때 판단을 흐린다.
+      # Humble 기본 3.2면 smoother(0.7)보다 크게 잘린다.
       max_angular_accel: 0.7
       transform_tolerance: 0.5
       use_velocity_scaled_lookahead_dist: true
-      # Skid-steering specific tuning
       use_regulated_linear_velocity_scaling: true
-      # 장애물: 감속 후 정지.
-      # costmap inflation 비용이 올라가면 선속도를 서서히 낮춘 뒤, 아래 충돌 창에서
-      # lethal이면 compute 예외 → patience 후 FollowPath 실패 → RecoveryNode 복구.
-      # (오마킹 시 불필요 감속 가능 — 필드에서 gain/dist 재조정)
+      # 장애물: inflation 비용으로 감속, lethal이면 FollowPath 실패 → 복구.
       use_cost_regulated_linear_velocity_scaling: true
       cost_scaling_dist: 1.0  # 조정가능
       cost_scaling_gain: 1.0  # 조정가능
@@ -149,12 +141,7 @@ controller_server:
       inflation_cost_scaling_factor: 3.0
       regulated_linear_scaling_min_radius: 0.9  # 조정가능
       regulated_linear_scaling_min_speed: 0.10  # 조정가능: 곡선 감속 하한(m/s)
-      # 충돌 검사: 현재 명령 (v,w) 를 앞으로 최대 이 시간(초)만큼 투영하며
-      # footprint↔lethal 겹침을 본다. 앞보기 거리 ≈ min(v * T, lookahead).
-      # ※ 속도가 바뀌면 같은 T라도 미터 창이 바뀐다 (예: 0.22 m/s * 4 s ≈ 0.88 m
-      #    투영 + footprint 앞 ~0.4 m → 중심 기준 대략 1 m급; v↑ 이면 더 멀리 봄).
-      # 감속(cost scaling) 켜면 저속에서 T초 창의 미터 길이가 짧아지므로,
-      # 기본 1.0 s 대신 4.0 s 로 올려 "감지 가능한 구간에서 먼저 감속·검사" 하도록 함.
+      # 충돌 검사 투영 시간(s). 거리 ≈ min(v * T, lookahead).
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_carrot: 4.0
       # 위치 추정 오차로 제자리 회전 모드에 고정되지 않도록 곡선 경로를 따른다.
@@ -226,10 +213,7 @@ global_costmap:
     ros__parameters:
       update_frequency: 1.0
       publish_frequency: 1.0
-      # Foxglove OccupancyGrid는 정지 시 updates만 오면 빈 맵으로 남음.
-      # 글로벌 2000 m @ 0.4 m = 5000x5000 ≈ 25 MB. send_buffer_limit 64 MiB.
-      # 0.25 m 는 8000x8000 ≈ 64 MB라 한도에 붙어 드롭한다. 25 MB도
-      # 클라이언트 outbox가 차면 유실된다 — 페이로드는 지금과 같게 유지.
+      # 정지 시 updates만 오면 Foxglove 맵이 비다. 2000 m @ 0.4 m ≈ 25 MB (0.25 m는 한도 드롭).
       always_send_full_costmap: true
       global_frame: map
       robot_base_frame: base_link
@@ -303,8 +287,7 @@ behavior_server:
     transform_tolerance: 0.5
 
 # 조정가능 — 플랫폼 상한에 맞춘 velocity_smoother
-# Humble bringup 기본 max_velocity [0.26,0,1.0] 은 옛 180mm 상한보다 크고 D250 상한보다 작다.
-# use_sim_time false (실차). max 선속도는 desired_linear_vel 0.97 과 정합.
+# max 선속도는 desired_linear_vel 0.97 과 정합.
 velocity_smoother:
   ros__parameters:
     use_sim_time: false
@@ -314,7 +297,6 @@ velocity_smoother:
     max_velocity: [0.97, 0.0, 0.6]
     min_velocity: [-0.97, 0.0, -0.6]
     # 조정가능 — 가감속
-    # 수동 drive_control 선가속 0.10/감속 0.25 보다 여유 있게 두되, 자율 스톨/SLIP 줄이도록 완화.
     # 각가속 0.7 은 drive_control/gamepad max_angular_accel 과 맞춤.
     # 조정가능 — controller_server 의 FollowPath.max_angular_accel 과 반드시 같이
     # 바꿀 것(현재 둘 다 0.7). 여기가 /cmd_vel 최종단이라 실제 로봇 동작을 결정한다.

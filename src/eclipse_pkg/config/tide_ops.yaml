@@ -35,5 +35,3 @@ tide_ops:
   polygon_margin_m: 4.0
   # GPS 기반 관측소 자동 선택 (코드 내 _TIDE_STATIONS 사용)
   enable_gps_station_select: true
-# 참고: 고·저조(시각·조위) 보조 API — 이번 버전에서는 미사용.
-#   https://apis.data.go.kr/1192136/tideFcstHghLw/GetTideFcstHghLwApiService
