@@ -35,7 +35,7 @@
         <GoalUpdated/>
         <Fallback name="RecoveryBranchSelector">
           <Sequence name="StallBranch">
-            <!-- 조정가능 임계 window_s=10: safety_state 10초 창에서 "stall" 검색 (tars_tuning.yaml)
+            <!-- 조정가능 임계 window_s=10: safety_state 10초 창에서 "stall" 검색
                  Escalation: Wait 5초 → BackUp 0.30m 후진으로 진흙 탈출 시도 -->
             <StallDetector window_s="10.0"/>
             <RecoveryAnnounce branch="STALL"/>
@@ -44,7 +44,7 @@
           </Sequence>
           <Sequence name="SlipBranch">
             <!--
-              조정가능 SLIP 임계 (tars_tuning.yaml § recovery_slip):
+              조정가능 SLIP 임계:
                 window_s=10              관측 창(초)
                 min_wheel_speed_mps=0.05 바퀴 평균 속도 하한(m/s)
                 min_fix_status=0         GPS status 최소 (0=FIX 이상)
@@ -67,7 +67,7 @@
           </Sequence>
           <Sequence name="CostmapBranch">
             <!--
-              조정가능 COSTMAP 임계 (tars_tuning.yaml § recovery_costmap):
+              조정가능 COSTMAP 임계:
                 radius_m=1.0       로봇 주변 검사 반경(m)
                 min_occupancy=90   셀 점유 ≥90 이면 막힘 (0~100)
               Escalation: wait 5s → clear → 재확인 → 여전히 막혔으면 spin 60°

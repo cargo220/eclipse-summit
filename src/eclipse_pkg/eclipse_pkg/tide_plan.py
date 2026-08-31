@@ -40,8 +40,7 @@ _UTMK = (
 DEFAULT_CONFIG_PATH = os.path.join('src', 'eclipse_pkg', 'config', 'tide_ops.yaml')
 
 # 설정 파일이 없거나 키가 빠져 있을 때 쓰는 내장 기본값.
-# API 엔드포인트/지점 코드는 활용가이드 확정 명세(2026-08-06) 기준.
-# 임계값(threshold)만 현장 기준 미정으로 플레이스홀더 유지.
+# API 엔드포인트/지점 코드는 조석예보 명세. 임계값은 현장 기준.
 DEFAULT_OPS = {
     'station_code': 'DT_0068',
     'station_name': '위도 (곰소만·변산 최근접 예보지점)',

@@ -75,8 +75,8 @@ def wheel_bulk_read_is_usable(front_ok, rear_ok):
     return bool(front_ok) and bool(rear_ok)
 
 # Robot geometry and wheel/motor conversion.
-# 조정가능 — 바퀴/기구 튜닝 (상세 목록: robot_specifications/tars_tuning.yaml)
-#   반지름·윤거·기어비가 바뀌면 odom·명령 RPM 환산·최대 선속도 한계가 같이 흔들림.
+# 조정가능 — 바퀴/기구 튜닝.
+# 반지름·윤거·기어비가 바뀌면 odom·명령 RPM 환산·최대 선속도 한계가 같이 흔들림.
 WHEEL_SEPARATION = 0.4788  # 조정가능: 좌우 바퀴 간격(m)
 # 패들테스트 선정 D250: 지름 250 mm → 반지름 0.125 m.
 # (코드 주석의 "반지름 250"은 지름 숫자. R=0.250 m 가 아님.)
@@ -128,7 +128,7 @@ _REF_BUFFER_SIZE = 10  # samples at 8 Hz → 1.25 s current window
 _REF_TERRAIN_SAMPLES = 4  # consecutive samples at 8 Hz → 0.5 s
 _REF_BASELINE_ALPHA = 0.01  # per-sample EMA at 8 Hz
 
-# 조정가능 — /cmd_vel 침묵 시 휠 정지 (tars_tuning.yaml § controller_cmd_timeouts)
+# 조정가능 — /cmd_vel 침묵 시 휠 정지
 CMD_VEL_TIMEOUT_SEC = 2.0
 HEIGHT_STATUS_DT = 0.5
 HEIGHT_VOLTAGE_STATUS_DT = 0.5  # addr 144 발행 주기(s)
@@ -154,7 +154,7 @@ MOTOR_TEMPERATURE_WARN_C = 55
 MOTOR_TEMPERATURE_STOP_C = 65
 MOTOR_PWM_LIMIT = 885
 # --- 모터 스톨 → /motor/safety_state 에 "stall" 문자열을 내는 물리 임계 ---
-# 조정가능 — recovery STALL 라벨 원천 (tars_tuning.yaml § recovery_stall)
+# 조정가능 — recovery STALL 라벨 원천
 # Recovery StallDetector 는 문자열만 보고, 아래 숫자는 컨트롤러가 라벨을 붙일 때 사용.
 # 조건(동시): |cmd|≥MIN_CMD  and  휠속도≤MAX_WHEEL  and  max|PWM|≥PWM_STALL
 #   → 유지 중: WARN_STALL_PWM_*  /  DURATION_SEC 이상: FAULT_stall_...
@@ -525,8 +525,7 @@ CURRENT_COVARIANCE_CONFIG = CurrentCovarianceConfig(
 def height_target_positions(front_pos, rear_pos):
     """Map ID 1 / ID 11 ticks onto all four motors.
 
-    Same 4-bar lengths. After the 2026-08-21 remount, pair IDs 4 and 14
-    copy the primary tick on that axle.
+    Same 4-bar lengths. Pair IDs 4 and 14 copy the primary tick on that axle.
     """
     from eclipse_pkg.height_table import (
         height_down_mm_for_ticks,

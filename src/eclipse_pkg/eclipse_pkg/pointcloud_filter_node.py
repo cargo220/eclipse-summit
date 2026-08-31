@@ -63,8 +63,7 @@ def _voxel_first_indices(
         | ((ky.astype(np.int64) + 32768) << 17)
         | (kz.astype(np.int64) + 32768)
     )
-    # sort + first-of-run: typically much faster than np.unique(..., return_index)
-    # for large N (py-spy hotspot on Jetson Xavier).
+    # sort + first-of-run instead of np.unique(..., return_index).
     order = np.argsort(keys, kind='quicksort')
     ks = keys[order]
     n = ks.size

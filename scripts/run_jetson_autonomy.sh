@@ -152,8 +152,7 @@ if [ "$ENABLE_YOLO_TRT" = true ] && [[ "$YOLO_MODEL" == *merged5* ]] && [ -z "$Y
   echo "WARN: merged5 engine without YOLO_CLASS_NAMES=person,shell — class 1 becomes bicycle and is dropped when allowed=person" >&2
 fi
 
-# NOTE: No cleanup trap needed - all containers run detached.
-# Use './scripts/run_jetson_autonomy.sh stop' to stop everything.
+# Containers run detached. Stop with './scripts/run_jetson_autonomy.sh stop'.
 
 # Automatically stop old autonomy/yolo containers if running (preserve rosbridge)
 stop_core >/dev/null 2>&1 || true

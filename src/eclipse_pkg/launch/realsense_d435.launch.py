@@ -1,4 +1,4 @@
-"""Standalone D435 launch for Docker/Jetson smoke tests.
+"""RealSense D435 launch.
 
 Default topics (camera_namespace:=camera, camera_name:=camera):
   /camera/camera/color/image_raw

@@ -84,9 +84,7 @@ class ProbeSensorNode(Node):
         self.raw_pub = self.create_publisher(Float32, self._topic('raw'), 10)
         self.voltage_pub = self.create_publisher(Float32, self._topic('voltage'), 10)
         self.angle_pub = self.create_publisher(Float32, self._topic('angle'), 10)
-        # ora-3 리뷰 P1-7 수리 (추가 전용): 시리얼 연결 상태를 그래프에 공개.
-        # 전환 시점 즉시 발행 + 주기 재발행으로 늦은 구독자도 상태를 얻고
-        # 발행 침묵으로 노드 죽음을 구별할 수 있게 한다.
+        # 전환 시점과 주기로 연결 상태를 발행한다.
         self.connected_pub = self.create_publisher(Bool, self._topic('connected'), 10)
 
         self._ser = None

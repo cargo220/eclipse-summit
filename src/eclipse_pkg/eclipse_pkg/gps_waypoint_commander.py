@@ -54,14 +54,8 @@ def build_toll_request(goal_pose):
 def geodetic_roundtrip_error(origin_point, roundtrip_point):
     """Planar map error after a map -> lat/lon -> map conversion.
 
-    Structure borrowed from the collaborator's workspace (~/ewooni_docker_4),
-    where every goal had to pass a ToLL -> FromLL round-trip check. Here the
-    same idea comes for free on the /clicked_point path: the click already
-    gives us a map point, so converting it out to lat/lon and back and
-    comparing tells us whether the geodetic datum currently agrees with the
-    map frame. A large error means navsat_transform's datum has drifted away
-    from the map the operator is clicking on, so the lat/lon we would act on
-    is not the place that was clicked.
+    A large error means navsat_transform's datum no longer matches the map
+    the click was made in.
     """
     return math.hypot(
         float(roundtrip_point.x) - float(origin_point.x),

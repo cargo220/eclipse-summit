@@ -108,7 +108,7 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      # 조정가능 — FollowPath 정체 → 복구 진입 조건 (tars_tuning.yaml § recovery_entry)
+      # 조정가능 — FollowPath 정체 → 복구 진입 조건
       required_movement_radius: 0.1  # 조정가능: 이 거리(m) 미만이면 "안 움직임"
       # 정체 감지: 0.1 m 미만 이동이 이 시간 지속되면 FollowPath FAILURE → 복구 분기.
       movement_time_allowance: 15.0  # 조정가능: 정체 허용 시간(s)
@@ -121,7 +121,7 @@ controller_server:
 
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      # 조정가능 — 자율 선속도/곡선 추종 (tars_tuning.yaml § speeds / nav2)
+      # 조정가능 — 자율 선속도/곡선 추종
       desired_linear_vel: 0.97 # 조정가능: 목표 선속도(m/s). 플랫폼 상한 ~0.9742 (D250·G2.5·130 tick)
       lookahead_dist: 2.5  # 조정가능
       min_lookahead_dist: 2.5  # 조정가능
@@ -291,11 +291,11 @@ behavior_server:
       enable: true
     spin:
       plugin: "nav2_behaviors/Spin"
-      # 조정가능 — COSTMAP 분기 escalation: wait+clear 후에도 막혀있을 때 회전 (tars_tuning.yaml § recovery_actions)
+      # 조정가능 — COSTMAP 분기: wait+clear 후에도 막혀있을 때 회전
       spin_dist: 1.047
     backup:
       plugin: "nav2_behaviors/BackUp"
-      # 조정가능 — STALL 분기: 진흙 스톨 탈출용 후진 (tars_tuning.yaml § recovery_actions)
+      # 조정가능 — STALL 분기: 진흙 스톨 탈출용 후진
       backup_dist: 0.30
       backup_speed: 0.15
     # 기본값(global_frame: odom, transform_tolerance: 0.1)은 map 기준 costmap과 불일치라 명시.
@@ -303,7 +303,7 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.5
 
-# 조정가능 — 플랫폼 상한에 맞춘 velocity_smoother (tars_tuning.yaml § velocity_smoother)
+# 조정가능 — 플랫폼 상한에 맞춘 velocity_smoother
 # Humble bringup 기본 max_velocity [0.26,0,1.0] 은 옛 180mm 상한보다 크고 D250 상한보다 작다.
 # use_sim_time false (실차). max 선속도는 desired_linear_vel 0.97 과 정합.
 velocity_smoother:

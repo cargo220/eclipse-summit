@@ -136,7 +136,7 @@ def generate_launch_description():
                 'ntrip_user': '',
                 'ntrip_pass': '',
                 'mountpoint': 'VRS-RTCM32',
-                # 조정가능 — GPS 모션 헤딩 최소 속도 (tars_tuning § gps_heading_speed_gates)
+                # 조정가능 — GPS 모션 헤딩 최소 속도
                 # bootstrap creep 0.18 m/s 보다 낮아야 부팅 헤딩 샘플이 나옴.
                 'heading_min_speed_mps': 0.15,
             }],

@@ -314,7 +314,7 @@ class GpsNode(Node):
         self.declare_parameter("fix_topic", "/gps/fix")
         self.declare_parameter("vel_topic", "/gps/vel")
         self.declare_parameter("heading_topic", "/gps/heading")
-        # 조정가능 — 모션 헤딩 발행 최소 지면속도 (tars_tuning.yaml § gps_heading_speed_gates)
+        # 조정가능 — 모션 헤딩 발행 최소 지면속도
         # description.launch 는 0.15 로 덮어씀. 기본도 0.15: bootstrap creep 0.2 가 헤딩을
         # 만들 수 있게 함. 예전 기본 0.3 은 creep(0.2)보다 커서 헤딩이 안 나올 수 있었음.
         self.declare_parameter("heading_min_speed_mps", 0.15)
@@ -607,7 +607,7 @@ class GpsNode(Node):
                     self.get_logger().error(
                         f"[Reader] serial error: {exc}; waiting for /gps/recover"
                     )
-                # Do not exit the thread — soft recover reopens the port.
+                # 스레드를 유지한다. /gps/recover가 포트를 다시 연다.
                 self._stop.wait(timeout=0.5)
             except Exception as exc:
                 if not self._stop.is_set():
