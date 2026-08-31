@@ -1,0 +1,12 @@
+probe_sensor:
+  ros__parameters:
+    port: /dev/ttyPROBE
+    baudrate: 115200
+    serial_timeout: 0.02
+    # 폴링 주기는 처리량이 아니라 지연. 아두이노 ~21Hz에 맞춘다.
+    timer_period: 0.05
+    reconnect_period: 2.0
+    publish_prefix: /probe
+    ground_max_deg: 25.0
+    mudflat_max_deg: 70.0
+    water_min_deg: 100.0

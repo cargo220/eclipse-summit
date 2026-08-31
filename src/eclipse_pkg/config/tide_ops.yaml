@@ -1,0 +1,39 @@
+# TARS 조석 활동 윈도우(tide_ops) 설정
+# 조석예보: 국립해양조사원 조석예보 API — data.go.kr 공공데이터포털 (REST, JSON)
+# 서비스 키는 환경변수 DATA_GO_KR_SERVICE_KEY로만 읽는다. 절대 이 파일에 기록하지 말 것.
+# 엔드포인트·예보지점 코드는 활용가이드 확정 명세(2026-08-06) 기준. 임계값 기준만 미정.
+tide_ops:
+  # 곰소항 자체는 예보지점 목록에 없음 → 위도(DT_0068)가 곰소만·변산 최근접 예보지점.
+  # 필요 시 대안: 격포항 SO_1262, 군산 DT_0018.
+  station_code: "DT_0068"
+  station_name: "위도 (곰소만·변산 최근접 예보지점)"
+  api_base_url: "https://apis.data.go.kr"
+  api_service_path: "/1192136/tideFcstTime/GetTideFcstTimeApiService"  # 조석예보 시계열 (주력)
+  interval_min: 60                       # 조회 간격(분), 명세상 1~60 가능
+  threshold:
+    mode: "absolute"                     # absolute: 절대 조위 임계 | rise_from_session_start: 세션 시작 조위 대비 상승량
+    tide_level_m: 0.0                    # absolute 모드 임계 조위(m) — 기준 미확정, 현장 기준 확립 후 설정
+    rise_m: 0.0                          # rise_from_session_start 모드 허용 상승량(m) — 기준 미확정
+  retreat:
+    mode: dynamic                        # dynamic | fixed. ground 없으면 조수선 성장 모델
+    ground_elevation_m: null             # 있으면 옛 공식과 공간 시각 중 이른 쪽
+    safety_margin_m: 0.3
+    retreat_distance_m: 300              # 지상고 경로 폴백. 공간 모델은 gps_home 거리
+    # 조정가능 — 실차 상한 ≈0.9742 (D250·G2.5·130 tick). 계산은 min(avg, max)
+    robot_max_speed_mps: 0.9742
+    robot_avg_speed_mps: 0.3             # 갯벌 복귀 시간 계산용 가정. 상한보다 작게
+    time_buffer_min: 10
+    spatial_margin_m: 20.0               # 마른 폭에서 빼는 여유
+    min_work_m: 15.0                     # 이보다 접근 범위가 작으면 대기/철수
+    fallback_mud_width_m: 400.0          # keepout↔C 광선 실패 시 단면 폭
+  safety_margin_min: 30                  # 옛 compute_window 마진. 공간 모델은 안 씀
+  cache_dir: "datasets/tide_cache"       # 운용일 캐시 디렉터리. 파일명은 tide_{station}_{오늘}_{내일}.json
+                                         # 노드는 기동 시(그리고 날짜가 바뀌면) 당일+내일만 fetch. 키는 DATA_GO_KR_SERVICE_KEY.
+  retreat_topic: "/mission/retreat"      # tide_watch 노드 철수 명령 토픽 (std_msgs/Bool, 1회 발행)
+  status_topic: "/mission/tide_status"   # tide_watch 노드 주기 상태 토픽 (std_msgs/String, JSON)
+  # TideLayer 마진(m). 최종 이격 ≈ 이 값 + inflation(0.5) + inscribed(0.4) ≈ 5m
+  polygon_margin_m: 4.0
+  # GPS 기반 관측소 자동 선택 (코드 내 _TIDE_STATIONS 사용)
+  enable_gps_station_select: true
+# 참고: 고·저조(시각·조위) 보조 API — 이번 버전에서는 미사용.
+#   https://apis.data.go.kr/1192136/tideFcstHghLw/GetTideFcstHghLwApiService

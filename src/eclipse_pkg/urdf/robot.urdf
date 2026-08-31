@@ -1,0 +1,112 @@
+<?xml version="1.0"?>
+<robot name="ros2_dyxel_robot">
+
+  <material name="blue"> <color rgba="0 0 1 1"/> </material>
+  <material name="black"> <color rgba="0 0 0 1"/> </material>
+  <material name="grey"> <color rgba="1 0.5 0.5 1"/> </material>
+
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.125" rpy="0 0 0"/>
+  </joint>  
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry> <box size="0.2 0.2 0.1"/> </geometry>
+      <material name="blue"/>
+    </visual>
+  </link>
+
+  <link name="left_wheel">
+    <visual>
+      <geometry> <cylinder length="0.02" radius="0.125"/> </geometry>
+      <material name="black"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0.08 0.01" rpy="0 0 0"/>
+      <geometry> <box size="0.01 0.01 0.01"/> </geometry>
+      <material name="grey"/>
+    </visual>
+  </link>
+
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="left_wheel"/>
+    <origin xyz="0 0.2394 0" rpy="-1.57 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="right_wheel">
+    <visual>
+      <geometry> <cylinder length="0.02" radius="0.125"/> </geometry>
+      <material name="black"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0.08 0.01" rpy="0 0 0"/>
+      <geometry> <box size="0.01 0.01 0.01"/> </geometry>
+      <material name="grey"/>
+    </visual>
+  </link>
+
+  <joint name="right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="right_wheel"/>
+    <origin xyz="0 -0.2394 0" rpy="1.57 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="camera_link">
+    <visual>
+      <geometry> <box size="0.05 0.05 0.05"/> </geometry>
+      <material name="grey"/>
+    </visual>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <!-- base_link에서 로봇 전면 카메라까지 0.27 m -->
+    <origin xyz="0.27 0 0.05" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================================================================
+       IMU / GPS 장착 위치 (2026-08-11 이관)
+
+       이전에는 description.launch.py가 static_transform_publisher 프로세스
+       두 개를 따로 띄워 발행하던 값이다. /tf_static 은 TRANSIENT_LOCAL 이라
+       발행자가 살아있어야 늦게 뜬 노드도 값을 받을 수 있어서, 프로세스를
+       그냥 죽일 수는 없었다. 대신 이미 상시 가동 중인 robot_state_publisher
+       에게 래치를 넘기는 방식으로 프로세스 2개를 없앴다 (URDF 의 fixed joint
+       는 자동으로 /tf_static 으로 발행된다).
+
+       ⚠️ 아래 수치는 기존 launch 값을 그대로 옮겨온 것이며 실물 실측으로
+       검증된 값이 아니다. **base_link 원점에서 각 센서까지의 거리를 자로
+       정확히 재서 반드시 확인할 것.** 이 값이 틀려도 에러는 나지 않는다 —
+       EKF 와 navsat_transform 이 센서 값을 로봇 중심 기준으로 환산할 때
+       조용히 어긋나서, 위치추정이 원인 불명으로 나빠지는 형태로만 드러난다.
+       검증 방법: ros2 run tf2_ros tf2_echo base_link imu_link (및 gps_link)
+       ================================================================== -->
+
+  <link name="imu_link"/>
+
+  <joint name="base_to_imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <!-- 실측 검증 필요: base_link 기준 전방 0.2853 m -->
+    <origin xyz="0.2853 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="gps_link"/>
+
+  <joint name="base_to_gps_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps_link"/>
+    <!-- 실측 검증 필요: base_link 기준 전방 0.2896 m, 좌측 0.045 m -->
+    <origin xyz="0.2896 0.045 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>

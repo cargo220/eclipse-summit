@@ -1,0 +1,18 @@
+# ROS 2
+/build/
+/install/
+/log/
+*.pyc
+__pycache__/
+.venv*/
+
+# Local secrets
+arduino/**/arduino_secrets.h
+
+# Editor
+.vscode/
+.codex/
+.agents/
+
+*.bak*
+*.bak_*

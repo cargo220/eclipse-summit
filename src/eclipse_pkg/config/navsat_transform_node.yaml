@@ -1,0 +1,48 @@
+navsat_transform_node:
+  ros__parameters:
+    # --- 기본 설정 ---
+    # 30Hz was higher than GPS fix rate and inflated wakeups/load; try 10Hz.
+    frequency: 10.0
+
+    # TF lookup 타임아웃. 기본 0.0은 "최신 transform만"이라 체인이 잠깐 비어도
+    # 즉시 에러를 뿌린다. 1.0초로 올려 odom->base_link/map->odom 체인이 뜰
+    # 때까지 기다리게 해 "Could not obtain map -> base_link" 로그 폭주를 막는다.
+    transform_timeout: 1.0
+
+    # --- 좌표 변환 설정 ---
+    # 지자기 헤딩(iahrs.py)이 이미 편각을 더해 진북으로 발행하므로, 여기서 다시
+    # 더하면 이중 보정이 된다. 0으로 둔다.
+    magnetic_declination_radians: 0.0
+
+    # UTM->map 방위 datum 을 EKF 필터링 yaw(/odometry/filtered)에서 잠근다.
+    # false면 /imu/data raw 쿼터니언(부팅 0점)으로 datum이 잠긴다.
+    # true면 보정된 odometry yaw를 datum으로 쓴다.
+    use_odometry_yaw: true
+
+    # IMU yaw=0 기준점 설정.
+    # 천안(127.1°E, UTM zone 52S 중앙 129°E)의 meridian convergence ≈ -1.14° 를
+    # 상쇄하는 계산값(+0.0199 rad). 정확값은 실차 아이폰 대조에서 최종 보정한다.
+    yaw_offset: 0.0199
+
+    # --- GPS → 로컬 좌표 변환 설정 ---
+    # true: 로봇 시작 위치를 원점(0,0)으로 설정
+    zero_altitude: true
+
+    # true: GPS 두 점으로 초기 heading 자동 추정 (IMU yaw 없이 사용)
+    wait_for_datum: false
+
+    # false: EKF(world_frame=map)가 map->base_link를 직접 발행하는 단일
+    # 모드라, navsat_transform_node가 별도로 "map" TF를 방송하면 이름이
+    # 겹쳐 map<->base_link TF 트리가 두 개로 갈라진다. GPS->로컬좌표 변환
+    # (/odometry/gps, /toLL, /fromLL)은 이 값과 무관하게 계속 동작한다.
+    broadcast_cartesian_transform: false
+    broadcast_cartesian_transform_as_parent_frame: false
+
+    # --- 토픽 설정 ---
+    # 입력
+    # /gps/fix          → GPS 원시 데이터
+    # /imu/data         → IMU 데이터 (각속도만 사용)
+    # /odometry/filtered → EKF 출력 (heading 추정에 사용)
+
+    # 출력
+    # /odometry/gps     → GPS를 로컬 좌표로 변환한 오도메트리 (ekf.yaml의 odom1로 연결)

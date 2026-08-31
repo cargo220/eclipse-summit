@@ -1,0 +1,33 @@
+# RealSense D435 node parameters (config_file injection).
+#
+# Jetson ARM NEON build (realsense2_camera 4.58.2) declares pointcloud params as
+# pointcloud__neon_.* — rs_launch pointcloud.enable is ignored; set them here.
+#
+# Costmap + pointcloud_filter only need XYZ raw points; YOLO needs raw color.
+
+# --- Point cloud (XYZ for costmap; RGB texture not required) ---
+pointcloud__neon_.enable: true
+pointcloud__neon_.ordered_pc: false
+# Allow depth-only samples so the node does not force full RGB packing when
+# a texel is missing (smaller / cheaper PointCloud2).
+pointcloud__neon_.allow_no_texture_points: true
+# Subsample points when building the cloud (higher = fewer points, less DDS).
+pointcloud__neon_.filter_magnitude: 3
+pointcloud__neon_.frames_queue_size: 4
+
+# --- Depth decimation BEFORE pointcloud (2 => ~1/4 of depth pixels) ---
+decimation_filter.enable: true
+decimation_filter.filter_magnitude: 2
+decimation_filter.frames_queue_size: 4
+
+# --- image_transport: raw only (drop compressed / theora / compressedDepth) ---
+# YOLO and yolo_3d subscribe to raw Image; Foxglove can use raw or its own compress.
+camera.color.image_raw.enable_pub_plugins:
+  - image_transport/raw
+camera.aligned_depth_to_color.image_raw.enable_pub_plugins:
+  - image_transport/raw
+camera.depth.image_rect_raw.enable_pub_plugins:
+  - image_transport/raw
+
+# RGBD combo is an extra copy path.
+enable_rgbd: false

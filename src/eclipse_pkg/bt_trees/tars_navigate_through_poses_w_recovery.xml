@@ -1,0 +1,66 @@
+<!--
+  NavigateThroughPoses preload mirror — 분기·임계는 tars_navigate_w_recovery.xml 과 동일.
+  COSTMAP 만 local+global clear (through-poses 레거시). UNKNOWN 은 clear 없음.
+-->
+
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <RateController hz="0.333">
+          <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
+            <ReactiveSequence>
+              <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
+              <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+            </ReactiveSequence>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <!-- Mirrors tars_navigate_w_recovery.xml: smooth the grid planner's
+             jagged output before handing it to the controller. Kept outside
+             the RateController so a re-planned path is always smoothed. -->
+        <SmoothPath unsmoothed_path="{path}" smoothed_path="{smoothed_path}"
+                    smoother_id="simple_smoother"/>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{smoothed_path}" controller_id="FollowPath"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Fallback name="RecoveryBranchSelector">
+          <Sequence name="StallBranch">
+            <!-- 임계 window_s: safety "stall" 검색 창(초) -->
+            <StallDetector window_s="10.0"/>
+            <RecoveryAnnounce branch="STALL"/>
+          </Sequence>
+          <Sequence name="SlipBranch">
+            <!-- SLIP 임계: 휠 0.05 / GPS 이동 fix0.50 sbas0.35 gbas0.15 / status≥0 / 창10s -->
+            <SlipDetector window_s="10.0"
+              min_wheel_speed_mps="0.05"
+              min_fix_status="0"
+              max_disp_fix_m="0.50"
+              max_disp_sbas_m="0.35"
+              max_disp_gbas_m="0.15"/>
+            <RecoveryAnnounce branch="SLIP"/>
+            <Wait server_name="wait" wait_duration="5.0"/>
+          </Sequence>
+          <Sequence name="CostmapBranch">
+            <!-- COSTMAP 임계: 반경 1m, occupancy≥90 -->
+            <CostmapBlockedDetector radius_m="1.0" min_occupancy="90"/>
+            <RecoveryAnnounce branch="COSTMAP"/>
+            <Wait server_name="wait" wait_duration="5.0"/>
+            <ClearEntireCostmap name="ClearLocalCostmap"
+              service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap"
+              service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+          <Sequence name="UnknownBranch">
+            <RecoveryAnnounce branch="UNKNOWN"/>
+            <Wait server_name="wait" wait_duration="5.0"/>
+          </Sequence>
+        </Fallback>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

@@ -1,0 +1,92 @@
+<!--
+  TARS recovery BT (NavigateToPose).
+
+  Recovery branching v3: STALL / SLIP / COSTMAP / UNKNOWN 4-way.
+  아래 숫자 속성 = 각 분기 판정 임계 (코드 기본값과 동일하게 맞춤; 바꿀 때 여기·헤더 주석 같이).
+
+  1) STALL  — safety 창에 "stall" 문자열
+  2) SLIP   — 바퀴 돔 + GPS 몸 거의 안 감 (status별 이동 상한)
+  3) COSTMAP — 로봇 근처 costmap occupancy 높음 → wait + local clear
+               → 재확인 후에도 막히면 Spin 60° (1.047 rad)
+  4) UNKNOWN — 나머지 → wait only (clear 없음)
+
+  Order: STALL → SLIP → COSTMAP → UNKNOWN.
+  운동 복구: COSTMAP → Spin(장애물 정지 후 60°), STALL/SLIP → BackUp(스톨 후진).
+-->
+
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="3" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <GoalUpdatedController>
+          <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+        </GoalUpdatedController>
+        <!-- Grid planner output is jagged at cell boundaries; smoothing it
+             before FollowPath gives the controller a path it can track without
+             fighting corner-to-corner heading flips. Must sit here at the
+             PipelineSequence level: GoalUpdatedController is a decorator and
+             takes exactly one child. smoother_id must match a plugin actually
+             configured on smoother_server (see nav2_params_mudflat.yaml). -->
+        <SmoothPath unsmoothed_path="{path}" smoothed_path="{smoothed_path}"
+                    smoother_id="simple_smoother"/>
+        <FollowPath path="{smoothed_path}"  controller_id="FollowPath"/>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Fallback name="RecoveryBranchSelector">
+          <Sequence name="StallBranch">
+            <!-- 조정가능 임계 window_s=10: safety_state 10초 창에서 "stall" 검색 (tars_tuning.yaml)
+                 Escalation: Wait 5초 → BackUp 0.30m 후진으로 진흙 탈출 시도 -->
+            <StallDetector window_s="10.0"/>
+            <RecoveryAnnounce branch="STALL"/>
+            <Wait server_name="wait" wait_duration="5.0"/>
+            <BackUp backup_dist="0.30" backup_speed="0.15"/>
+          </Sequence>
+          <Sequence name="SlipBranch">
+            <!--
+              조정가능 SLIP 임계 (tars_tuning.yaml § recovery_slip):
+                window_s=10              관측 창(초)
+                min_wheel_speed_mps=0.05 바퀴 평균 속도 하한(m/s)
+                min_fix_status=0         GPS status 최소 (0=FIX 이상)
+                max_disp_fix_m=0.50      단독 fix 때 몸 이동 상한(m)
+                max_disp_sbas_m=0.35     Float 때 상한(m)
+                max_disp_gbas_m=0.15     RTK Fixed 때 상한(m)
+            -->
+            <SlipDetector window_s="10.0"
+              min_wheel_speed_mps="0.05"
+              min_fix_status="0"
+              max_disp_fix_m="0.50"
+              max_disp_sbas_m="0.35"
+              max_disp_gbas_m="0.15"/>
+            <RecoveryAnnounce branch="SLIP"/>
+            <Wait server_name="wait" wait_duration="5.0"/>
+            <!-- set_height: body 높이 재배치 후 대기. BackUp 전에 접지력 확보.
+                 wait_duration은 YAML의 set_height.wait_duration이 사용됨 (XML 값은 무시). -->
+            <Wait server_name="set_height" wait_duration="2.0"/>
+            <BackUp backup_dist="0.30" backup_speed="0.15"/>
+          </Sequence>
+          <Sequence name="CostmapBranch">
+            <!--
+              조정가능 COSTMAP 임계 (tars_tuning.yaml § recovery_costmap):
+                radius_m=1.0       로봇 주변 검사 반경(m)
+                min_occupancy=90   셀 점유 ≥90 이면 막힘 (0~100)
+              Escalation: wait 5s → clear → 재확인 → 여전히 막혔으면 spin 60°
+            -->
+            <CostmapBlockedDetector radius_m="1.0" min_occupancy="90"/>
+            <RecoveryAnnounce branch="COSTMAP"/>
+            <Wait server_name="wait" wait_duration="5.0"/>
+            <ClearEntireCostmap name="ClearLocalCostmap"
+              service_name="local_costmap/clear_entirely_local_costmap"/>
+            <CostmapBlockedDetector radius_m="1.0" min_occupancy="90"/>
+            <Spin spin_dist="1.047"/>
+          </Sequence>
+          <Sequence name="UnknownBranch">
+            <!-- 조건 노드 없음 = 위 분기 실패 시 항상. clear 안 함 -->
+            <RecoveryAnnounce branch="UNKNOWN"/>
+            <Wait server_name="wait" wait_duration="5.0"/>
+          </Sequence>
+        </Fallback>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

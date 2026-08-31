@@ -1,0 +1,61 @@
+# Foxglove 광고 목록. 정규식은 이름 전체 일치(^...$).
+# 제외: 수다/수명주기, 원본 카메라·점구름. 영상은 YOLO compressed 만.
+/**:
+  ros__parameters:
+    port: 8765
+    # 글로벌 costmap 500 m @ 0.1 m OccupancyGrid ≈ 25 MB.
+    # 기본 10 MB면 foxglove_bridge가 메시지를 드롭한다. 기동 시에만 읽힘.
+    send_buffer_limit: 67108864
+    min_qos_depth: 1
+    max_qos_depth: 10
+    capabilities:
+      - clientPublish
+      - services
+    service_whitelist:
+      - "^/navigation/cancel$"
+    client_topic_whitelist:
+      - "^/goal_pose$"
+      - "^/goal_pose_dropoff$"
+      - "^/clicked_point$"
+      - "^/initialpose$"
+    topic_whitelist:
+      - "^/tf$"
+      - "^/tf_static$"
+      - "^/robot_description$"
+      - "^/clicked_point$"
+      - "^/goal_pose$"
+      - "^/goal_pose_dropoff$"
+      - "^/goal_pose/latlon$"
+      - "^/initialpose$"
+      - "^/move_base_simple/goal$"
+      - "^/nav2/goal_pose$"
+      - "^/set_pose$"
+      - "^/cmd_vel$"
+      - "^/cmd_vel_nav$"
+      - "^/joy$"
+      - "^/joy/set_feedback$"
+      - "^/gps(/.*)?$"
+      - "^/navigation(/.*)?$"
+      - "^/imu(/.*)?$"
+      - "^/odom$"
+      - "^/odometry(/.*)?$"
+      - "^/plan$"
+      - "^/plan_smoothed$"
+      - "^/received_global_plan$"
+      - "^/lookahead_point$"
+      - "^/lookahead_collision_arc$"
+      - "^/speed_limit$"
+      - "^/global_costmap/(costmap|costmap_raw|costmap_updates|footprint|published_footprint)$"
+      - "^/local_costmap/(costmap|costmap_raw|costmap_updates|footprint|published_footprint|clearing_endpoints)$"
+      - "^/tide(/.*)?$"
+      - "^/mission(/.*)?$"
+      - "^/yolo/debug_image/compressed$"
+      - "^/yolo/detections$"
+      - "^/drive(/.*)?$"
+      - "^/height(/.*)?$"
+      - "^/dxl(/.*)?$"
+      - "^/motor/safety_state$"
+      - "^/present_current$"
+      - "^/joint_states$"
+      - "^/probe(/.*)?$"
+      - "^/recovery/active_branch$"

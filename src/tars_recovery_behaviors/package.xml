@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tars_recovery_behaviors</name>
+  <version>0.2.0</version>
+  <description>TARS custom Nav2 recovery behaviors and BT condition nodes</description>
+  <maintainer email="ley184526@icloud.com">cargo220</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav2_core</depend>
+  <depend>nav2_behaviors</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav2_msgs</depend>
+  <depend>nav2_util</depend>
+  <depend>tf2_ros</depend>
+  <depend>pluginlib</depend>
+  <depend>behaviortree_cpp_v3</depend>
+  <depend>eclipse_pkg_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <nav2_core plugin="${prefix}/tars_recovery_plugin.xml"/>
+    <behaviortree_cpp_v3 plugin="${prefix}/tars_bt_plugins.xml"/>
+  </export>
+</package>

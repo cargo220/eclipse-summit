@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>eclipse_pkg</name>
+  <version>0.0.0</version>
+  <description>TARS mudflat rescue robot ROS 2 nodes, launch, and Nav2 config</description>
+  <maintainer email="ley184526@icloud.com">cargo220</maintainer>
+  <license>TODO: License declaration</license>
+
+  <depend>rclpy</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>robot_localization</depend>
+  <depend>geographic_msgs</depend>
+  <exec_depend>joy</exec_depend>
+  <exec_depend>usb_cam</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+
+  <depend>eclipse_pkg_msgs</depend>
+  <depend>python3-serial</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

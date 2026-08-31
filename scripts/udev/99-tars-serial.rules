@@ -1,0 +1,20 @@
+# Stable serial aliases for the TARS Eclipse robot.
+# Generated from connected Jetson USB devices on 2026-05-11.
+# Dual CM-900 (2026-08-24): no unique USB serial, so match hub port.
+# FRONT = Xavier hub KERNELS 1-2.1.1 (ttyACM0 when enumerated in this order).
+# REAR  = Xavier hub KERNELS 1-2.1.4 (ttyACM3). Do not swap the USB sockets.
+
+# ROBOTIS CM-900 / OpenCM — front Dynamixel bus
+SUBSYSTEM=="tty", ATTRS{idVendor}=="fff1", ATTRS{idProduct}=="ff48", KERNELS=="1-2.1.1", SYMLINK+="wttyOPENCM_FRONT", GROUP="dialout", MODE="0660"
+
+# ROBOTIS CM-900 / OpenCM — rear Dynamixel bus
+SUBSYSTEM=="tty", ATTRS{idVendor}=="fff1", ATTRS{idProduct}=="ff48", KERNELS=="1-2.1.4", SYMLINK+="wttyOPENCM_REAR", GROUP="dialout", MODE="0660"
+
+# u-blox GNSS receiver
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", SYMLINK+="ttyGPS", GROUP="dialout", MODE="0660"
+
+# iAHRS / CP2102 USB-UART adapter
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", ATTRS{serial}=="0001", SYMLINK+="ttyIMU", GROUP="dialout", MODE="0660"
+
+# Probe Arduino Mega 2560
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0042", ATTRS{serial}=="03536373332351B00214", SYMLINK+="ttyPROBE", GROUP="dialout", MODE="0660"
