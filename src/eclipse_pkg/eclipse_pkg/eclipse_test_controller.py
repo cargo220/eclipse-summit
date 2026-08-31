@@ -850,6 +850,10 @@ class EclipseTestController(Node):
     # ROS callbacks
     # ------------------------------------------------------------------
     def cmd_vel_callback(self, msg):
+        if self.motor_safety_fault:
+            self.reset_drive_command()
+            return
+
         # Nav2 and manual commands both use the standard base_link convention:
         # +linear.x is forward and -linear.x is reverse.
         requested_v = float(msg.linear.x)
@@ -1284,6 +1288,9 @@ class EclipseTestController(Node):
         )
 
     def write_wheel_velocity_commands(self):
+        if self.motor_safety_fault:
+            return
+
         if self.autonomy_active:
             heading_correction_w = 0.0
         else:
@@ -1306,6 +1313,8 @@ class EclipseTestController(Node):
         corrected_target_r = (
             self.target_r + (heading_correction_w * WHEEL_SEPARATION / 2.0)
         )
+        corrected_target_l *= self.motor_safety_speed_scale
+        corrected_target_r *= self.motor_safety_speed_scale
 
         raw_cmd_l = (
             (corrected_target_l / WHEEL_COMMAND_RADIUS / MOTOR_TO_WHEEL_SPEED_RATIO)
@@ -1409,11 +1418,33 @@ class EclipseTestController(Node):
             self.get_logger().info("wheel bus watchdog disabled and cleared")
 
     def motor_safety_loop(self):
-        # addr 70 로그/토픽은 높이와 같이 남긴다. 토크 차단은 끈 상태.
         self.publish_wheel_hardware_error_status()
-        self.motor_safety_fault = False
-        self.motor_safety_speed_scale = 1.0
-        self.publish_motor_safety_state("OK")
+        if self.motor_safety_fault:
+            self.publish_motor_safety_state(self.motor_safety_state)
+            return
+
+        if not self.refresh_motor_safety_reads():
+            self.handle_motor_safety_read_failure("WARN_SAFETY_READ_FAIL")
+            return
+
+        feedback = []
+        for dxl_id in DXL_ALL_IDS:
+            if not self.motor_safety_feedback_available(dxl_id):
+                self.handle_motor_safety_read_failure(
+                    f"WARN_SAFETY_DATA_MISSING_ID_{dxl_id}"
+                )
+                return
+            feedback.append(self.read_motor_safety_feedback(dxl_id))
+
+        self.motor_safety_read_failures = 0
+        fault_reason = self.find_motor_safety_fault(feedback)
+        if fault_reason:
+            self.trigger_motor_safety_fault(fault_reason)
+            return
+
+        warn_state = self.find_motor_safety_warning(feedback)
+        self.publish_motor_safety_state(warn_state or "OK")
+        self.log_motor_safety_warning(warn_state)
 
     def refresh_motor_safety_reads(self):
         # present PWM은 feedback_loop가 이미 갱신한다.
@@ -1610,8 +1641,26 @@ class EclipseTestController(Node):
         return None
 
     def trigger_motor_safety_fault(self, reason):
-        self.get_logger().warn(
-            f"motor safety fault ignored (wheels 2/3/12/13): {reason}"
+        if self.motor_safety_fault:
+            return
+
+        self.motor_safety_fault = True
+        self.motor_safety_state = f"FAULT_{reason}"
+        self.motor_safety_speed_scale = 0.0
+        self.reset_drive_command()
+        self.stop_wheels()
+
+        for dxl_id in DXL_ALL_IDS:
+            self.write_dxl_byte(
+                dxl_id,
+                ADDR_TORQUE_ENABLE,
+                TORQUE_DISABLE_VAL,
+                "wheel safety torque disable",
+            )
+
+        self.publish_motor_safety_state(self.motor_safety_state)
+        self.get_logger().error(
+            f"motor safety fault: {reason}; wheel torque disabled"
         )
 
     def publish_motor_safety_state(self, state):

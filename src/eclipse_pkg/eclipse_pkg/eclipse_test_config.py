@@ -403,8 +403,8 @@ def height_current_clamp_is_enabled(limit_ma=None):
     if limit_ma is None:
         limit_ma = HEIGHT_CURRENT_CLAMP_MA
     return float(limit_ma) > 0.0
-# Software stop for height IDs 1/4/11/14. Wheel software temp path is still
-# bypassed. Firmware Temperature Limit stays 70 C as last resort.
+# Software stop for height IDs 1/4/11/14. Wheel temp/stall path is live.
+# Firmware Temperature Limit stays 70 C as last resort.
 HEIGHT_TEMPERATURE_STOP_C = 65  # 조정가능: 높이 Present Temperature 정지(°C)
 HEIGHT_INITIALIZE_ATTEMPTS = 3
 HEIGHT_INITIALIZE_TIMEOUT_SEC = 4.0
