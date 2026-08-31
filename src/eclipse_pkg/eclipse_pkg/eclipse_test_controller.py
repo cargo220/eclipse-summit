@@ -278,10 +278,7 @@ class EclipseTestController(Node):
         self.height_temp_fault = False
         self.height_temp_fault_id = None
         self.height_temp_fault_c = None
-        # Height AI policy runs in-process (see height_ai_apply_loop). Declared
-        # as parameters so a trained checkpoint can be swapped in without code
-        # changes, and so description_ai.launch.py can disable it while the
-        # dataset random-probe FSM owns the height actuator.
+        # Height AI runs in-process. Empty model path holds current height.
         self.declare_parameter('enable_height_ai', True)
         self.declare_parameter('height_ai_model_path', '')
         self.height_ai_enabled = bool(
@@ -363,14 +360,8 @@ class EclipseTestController(Node):
         self.open_dynamixel_bus()
         self.configure_dynamixels()
         self.wheel_velocity_limit_ticks = self.read_wheel_velocity_limits()
-        # Binding limit for saturation scaling: the slowest wheel governs, since
-        # exceeding any one of them is what distorts the arc.
-        # read_wheel_velocity_limits stores 0 for a wheel whose register read
-        # failed. Dropping those matters because scale_to_wheel_limit treats a
-        # 0 limit as "unknown" and skips scaling entirely — so a plain min()
-        # would let ONE failed read silently disable the protection for all four
-        # wheels. (It would not stop the robot; it would just hand saturation
-        # back to the firmware, which clips only the faster wheel.)
+        # 가장 느린 휠 한계로 포화. 0(읽기 실패)은 min에서 빼서, 실패 1개가
+        # 스케일을 끄지 않게 한다.
         usable_limits = [t for t in self.wheel_velocity_limit_ticks if t > 0]
         self.wheel_limit_ticks = float(min(usable_limits)) if usable_limits else 0.0
         if not usable_limits:
@@ -859,10 +850,6 @@ class EclipseTestController(Node):
     # ROS callbacks
     # ------------------------------------------------------------------
     def cmd_vel_callback(self, msg):
-        # if self.motor_safety_fault:
-        #     self.reset_drive_command()
-        #     return
-
         # Nav2 and manual commands both use the standard base_link convention:
         # +linear.x is forward and -linear.x is reverse.
         requested_v = float(msg.linear.x)
@@ -1138,9 +1125,7 @@ class EclipseTestController(Node):
         return diff <= HEIGHT_AI_PROBE_CONTACT_TOLERANCE
 
     def height_ai_apply_loop(self):
-        # Policy output reaches the servo only through arbitrate_height_ai_command():
-        # manual height_state always wins; proposal is deadbanded, rate-limited,
-        # and mm-clamped twice.
+        # 서보는 arbitrate_height_ai_command만 탄다. 수동 높이 우선.
         if not self.height_ai_enabled:
             return
         if self.height_temp_fault:
@@ -1157,8 +1142,7 @@ class EclipseTestController(Node):
             )
             proposal_down_mm = proposal.down_mm
         except Exception as exc:
-            # Never let a policy defect take down the Dynamixel bus owner.
-            # Holding the current height is the same no-op the stub produces.
+            # 정책 예외가 버스 소유자를 내리지 않게 현재 높이를 유지한다.
             self.get_logger().error(
                 f"height AI policy failed ({exc}); holding current height",
                 throttle_duration_sec=5.0,
@@ -1170,8 +1154,6 @@ class EclipseTestController(Node):
             height_state=self.height_state,
             manual_state=HEIGHT_STATE_MANUAL,
             proposal_down_mm=proposal_down_mm,
-            # Always fresh: the proposal was computed from live attributes in
-            # this very tick, so there is no transport that could make it stale.
             proposal_fresh=True,
             dt_sec=HEIGHT_AI_APPLY_DT,
             max_rate_mm_per_s=HEIGHT_AI_MAX_RATE_MM_PER_S,
@@ -1302,9 +1284,6 @@ class EclipseTestController(Node):
         )
 
     def write_wheel_velocity_commands(self):
-        # if self.motor_safety_fault:
-        #     return
-
         if self.autonomy_active:
             heading_correction_w = 0.0
         else:
@@ -1327,8 +1306,6 @@ class EclipseTestController(Node):
         corrected_target_r = (
             self.target_r + (heading_correction_w * WHEEL_SEPARATION / 2.0)
         )
-        # corrected_target_l *= self.motor_safety_speed_scale
-        # corrected_target_r *= self.motor_safety_speed_scale
 
         raw_cmd_l = (
             (corrected_target_l / WHEEL_COMMAND_RADIUS / MOTOR_TO_WHEEL_SPEED_RATIO)
@@ -1437,33 +1414,6 @@ class EclipseTestController(Node):
         self.motor_safety_fault = False
         self.motor_safety_speed_scale = 1.0
         self.publish_motor_safety_state("OK")
-        return
-        # if self.motor_safety_fault:
-        #     self.publish_motor_safety_state(self.motor_safety_state)
-        #     return
-        #
-        # if not self.refresh_motor_safety_reads():
-        #     self.handle_motor_safety_read_failure("WARN_SAFETY_READ_FAIL")
-        #     return
-        #
-        # feedback = []
-        # for dxl_id in DXL_ALL_IDS:
-        #     if not self.motor_safety_feedback_available(dxl_id):
-        #         self.handle_motor_safety_read_failure(
-        #             f"WARN_SAFETY_DATA_MISSING_ID_{dxl_id}"
-        #         )
-        #         return
-        #     feedback.append(self.read_motor_safety_feedback(dxl_id))
-        #
-        # self.motor_safety_read_failures = 0
-        # fault_reason = self.find_motor_safety_fault(feedback)
-        # if fault_reason:
-        #     self.trigger_motor_safety_fault(fault_reason)
-        #     return
-        #
-        # warn_state = self.find_motor_safety_warning(feedback)
-        # self.publish_motor_safety_state(warn_state or "OK")
-        # self.log_motor_safety_warning(warn_state)
 
     def refresh_motor_safety_reads(self):
         # present PWM은 feedback_loop가 이미 갱신한다.
@@ -1663,28 +1613,6 @@ class EclipseTestController(Node):
         self.get_logger().warn(
             f"motor safety fault ignored (wheels 2/3/12/13): {reason}"
         )
-        return
-        # if self.motor_safety_fault:
-        #     return
-        #
-        # self.motor_safety_fault = True
-        # self.motor_safety_state = f"FAULT_{reason}"
-        # self.motor_safety_speed_scale = 0.0
-        # self.reset_drive_command()
-        # self.stop_wheels()
-        #
-        # for dxl_id in DXL_ALL_IDS:
-        #     self.write_dxl_byte(
-        #         dxl_id,
-        #         ADDR_TORQUE_ENABLE,
-        #         TORQUE_DISABLE_VAL,
-        #         "wheel safety torque disable",
-        #     )
-        #
-        # self.publish_motor_safety_state(self.motor_safety_state)
-        # self.get_logger().error(
-        #     f"motor safety fault: {reason}; wheel torque disabled"
-        # )
 
     def publish_motor_safety_state(self, state):
         self.motor_safety_state = state
