@@ -1,12 +1,7 @@
-# TARS LOCAL FORK of nav2_bringup/launch/navigation_launch.py (ROS 2 Humble).
-#
-# Why a fork: nav2_bringup offers no launch argument to skip individual
-# servers, and we need waypoint_follower gone (see the lifecycle_nodes comment
-# below). Everything else is byte-identical to the upstream file.
-#
-# MAINTENANCE: re-diff against
-#   /opt/ros/humble/share/nav2_bringup/launch/navigation_launch.py
-# after any Nav2 upgrade, or this fork will silently miss upstream fixes.
+# Local fork of nav2_bringup/launch/navigation_launch.py (Humble).
+# waypoint_follower is dropped (unused; see lifecycle_nodes below).
+# Re-diff against /opt/ros/humble/share/nav2_bringup/launch/navigation_launch.py
+# after a Nav2 upgrade.
 #
 # Copyright (c) 2018 Intel Corporation
 #
@@ -171,7 +166,6 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings),
-            # TARS fork: nav2_waypoint_follower Node removed here.
             Node(
                 package='nav2_velocity_smoother',
                 executable='velocity_smoother',
@@ -229,7 +223,6 @@ def generate_launch_description():
                 name='bt_navigator',
                 parameters=[configured_params],
                 remappings=remappings),
-            # TARS fork: nav2_waypoint_follower ComposableNode removed here.
             ComposableNode(
                 package='nav2_velocity_smoother',
                 plugin='nav2_velocity_smoother::VelocitySmoother',

@@ -7,7 +7,6 @@ Default outputs: /yolo/detections (vision_msgs/Detection2DArray),
                  /yolo/detections_3d_markers (MarkerArray for RViz, if enable_3d).
 
 Uses eclipse_pkg yolo_detect_node (Ultralytics) + yolo_3d_node.
-Does not require yolo_ros. License note: Ultralytics is AGPL.
 """
 
 from launch import LaunchDescription
@@ -159,7 +158,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'model',
             default_value='yolov8n.pt',
-            description='Ultralytics model name/path (n = smoke).',
+            description='Ultralytics model name/path.',
         ),
         DeclareLaunchArgument(
             'device',
@@ -219,7 +218,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'h264_udp_host',
             default_value='',
-            description='Laptop IP for H.264 UDP (e.g. 10.10.1.19).',
+            description='Laptop IP for H.264 UDP.',
         ),
         DeclareLaunchArgument(
             'h264_udp_port',
@@ -266,8 +265,7 @@ def generate_launch_description():
             default_value='person',
             description=(
                 'Comma-separated class names to keep (empty = all). '
-                'Rescue default is person. merged5: person,shell '
-                'and set class_names.'
+                'Default is person.'
             ),
         ),
         DeclareLaunchArgument(
@@ -280,14 +278,14 @@ def generate_launch_description():
             default_value='',
             description=(
                 'Ordered names for engines without metadata '
-                '(empty = COCO-80 fallback). merged5: person,shell.'
+                '(empty = COCO-80 fallback).'
             ),
         ),
         DeclareLaunchArgument(
             'class_thresholds',
             default_value='',
             description=(
-                'Per-class score cuts, e.g. person:0.65,shell:0.3 '
+                'Per-class score cuts, e.g. person:0.65 '
                 '(empty = use threshold for every class).'
             ),
         ),

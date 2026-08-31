@@ -47,27 +47,20 @@ def generate_launch_description():
             description='Velocity topic published by gamepad_drive.',
         ),
 
-        # Height AI policy runs inside eclipse_test_controller (the Dynamixel
-        # bus owner), not as its own node — see height_ai_apply_loop.
+        # Height AI runs inside eclipse_test_controller, not a separate node.
         DeclareLaunchArgument(
             'enable_height_ai',
             default_value='true',
             description=(
-                'Let the height AI policy propose heights inside '
-                'eclipse_test_controller. Manual D-pad input always wins '
-                'regardless; with no model path the policy is a stub that '
-                'only ever holds the current height.'
+                'Enable height AI inside eclipse_test_controller. '
+                'Manual D-pad always wins; empty model path holds current height.'
             ),
         ),
 
         DeclareLaunchArgument(
             'height_ai_model_path',
             default_value='',
-            description=(
-                'Height outcome checkpoint JSON (tars-height-outcome-v1). '
-                'Empty or invalid = stub hold. A skeleton (zero weights) '
-                'loads the grid path but still holds the current height.'
-            ),
+            description='Height checkpoint JSON. Empty or invalid = stub hold.',
         ),
 
         DeclareLaunchArgument(
@@ -162,14 +155,6 @@ def generate_launch_description():
             }],
         ),
 
-        # base_link->imu_link / base_link->gps_link used to be two separate
-        # static_transform_publisher processes here. They now live as fixed
-        # joints in robot.urdf, so robot_state_publisher above emits them on
-        # the same /tf_static — two fewer processes and DDS participants, with
-        # the TRANSIENT_LOCAL latch still served by a long-lived publisher.
-        # The offsets still need physical verification; see the warning block
-        # in robot.urdf.
-
         Node(
             package='robot_localization',
             executable='ekf_node',
@@ -188,15 +173,12 @@ def generate_launch_description():
             parameters=[navsat_config_path],
             remappings=[
                 ('/imu', '/imu/data'),
-                # navsat gets /gps/fix directly.
                 ('/odometry/filtered', '/odometry/filtered'),
                 ('/odometry/gps', '/odometry/gps_raw'),
             ],
             respawn=True,
             respawn_delay=2.0,
         ),
-
-        # GPS_node publishes /odometry/gps and /odometry/gps_velocity.
 
         Node(
             package='eclipse_pkg',
@@ -255,9 +237,6 @@ def generate_launch_description():
                 'skip_device_check': True,
             }],
         ),
-
-        # plotjuggler removed: headless Jetson aborts (no DISPLAY) and only
-        # produces process-has-died noise; use laptop-side PlotJuggler if needed.
 
         Node(
             package='teleop_twist_keyboard',

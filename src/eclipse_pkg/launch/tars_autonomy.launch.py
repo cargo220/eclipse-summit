@@ -19,7 +19,6 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     pkg_name = 'eclipse_pkg'
 
-    # Configuration files
     nav2_params_path = PathJoinSubstitution([
         FindPackageShare(pkg_name),
         'config',
@@ -49,8 +48,7 @@ def generate_launch_description():
         'tide_gps_topic',
         default_value='/gps/fix',
         description=(
-            'GPS topic for tide_watch only. Use /gps/fix_tide_sim to inject '
-            'a fake mudflat fix without feeding EKF.'
+            'GPS topic subscribed by tide_watch. Does not feed EKF.'
         ),
     )
 
@@ -73,10 +71,7 @@ def generate_launch_description():
         ),
     )
 
-    # enable_height_ai / height_ai_model_path는 description.launch.py에서
-    # eclipse_test_controller로 전달한다. 높이 정책은 그 프로세스 안에서 돈다.
-
-    # 1. Base Hardware & Localization (Includes EKF, GPS, Motors)
+    # Hardware, localization, motors.
     base_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -92,7 +87,7 @@ def generate_launch_description():
         }.items()
     )
 
-    # 2. Perception (RealSense Depth Camera for Costmap)
+    # RealSense for costmap obstacle layers.
     realsense_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -103,7 +98,6 @@ def generate_launch_description():
         ])
     )
 
-    # 3. Nav2 Navigation Stack (Mapless, Phase 2)
     nav2_launch = GroupAction(
         actions=[
             # bt_navigator의 기본 /goal_pose 구독을 격리한다.
@@ -112,10 +106,6 @@ def generate_launch_description():
             # bond를 끄면 관리 노드와 lifecycle_manager 양쪽에 같이 적용해야 한다.
             # 한쪽만 끄면 반대편이 unreachable로 오판해 전체 shutdown을 유발한다.
             SetParameter(name='bond_timeout', value=0.0),
-            # Local fork of nav2_bringup's navigation_launch.py — identical
-            # except that waypoint_follower is dropped (unused here; see the
-            # header of tars_navigation.launch.py). Re-diff against upstream
-            # after any Nav2 upgrade.
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([
                     PathJoinSubstitution([
@@ -133,7 +123,6 @@ def generate_launch_description():
         ]
     )
 
-    # 4. Commander Node (Phase 3: Click-to-Navigate)
     gps_commander_node = Node(
         package=pkg_name,
         executable='gps_waypoint_commander',
@@ -141,8 +130,7 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 4a. GPS loss W2 + soft /gps/recover + return-to-home (no hard restart).
-    # Home: first good-fix map pose, or set home_x/home_y parameters.
+    # GPS loss: wait, /gps/recover, then return-to-home (no hard restart).
     gps_health_supervisor_node = Node(
         package=pkg_name,
         executable='gps_health_supervisor',
@@ -216,13 +204,12 @@ def generate_launch_description():
 
     tide_watch_node = OpaqueFunction(function=_tide_watch_node)
 
-    # 4b. EKF yaw is pose0 (/imu/mag_heading). navsat uses use_odometry_yaw
+    # EKF yaw is pose0 (/imu/mag_heading). navsat uses use_odometry_yaw
     # and /gps/fix directly.
 
-    # 4c. Static TF: camera_link → base_link. RealSense publishes internal
-    # camera_link → camera_depth_optical_frame, but the link to base_link
-    # is missing. Without this, costmap can't transform camera points to
-    # robot frame (Message Filter dropping errors).
+    # camera_link → base_link. RealSense publishes internal camera frames
+    # but not this link; without it costmap cannot transform points
+    # (Message Filter dropping).
     camera_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -242,7 +229,6 @@ def generate_launch_description():
         parameters=[probe_sensor_yaml]
     )
 
-    # 5. Remote UI (Foxglove Bridge)
     # 광고 목록은 config/foxglove_bridge.yaml. 수다/수명주기·원본 카메라 제외.
     foxglove_params = PathJoinSubstitution([
         FindPackageShare(pkg_name),
@@ -258,7 +244,6 @@ def generate_launch_description():
         parameters=[foxglove_params],
     )
 
-    # 6. Optional: YOLOv8 Integration
     yolo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
