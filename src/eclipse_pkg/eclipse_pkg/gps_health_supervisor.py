@@ -40,15 +40,7 @@ from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
-# ===========================================================================
-# NAVIGATION READINESS
-# ===========================================================================
-# Nav2's lifecycle "active" means the servers are CONFIGURED, not that the
-# robot can drive. All three costmap/controller servers run with
-# global_frame: map and happily reach 'active' while the map frame does not
-# exist at all, so `Managed nodes are active` reads as healthy right up until
-# a goal fails six steps downstream. This topic exposes the readiness chain
-# that lifecycle state hides: GPS flowing, then map->base_link.
+# lifecycle active만으로는 주행 불가. GPS 유입 후 map->base_link 가 있어야 READY.
 READINESS_TOPIC = '/navigation/readiness'
 
 # How long /gps/fix may go quiet before readiness reports stalled. 조정가능.

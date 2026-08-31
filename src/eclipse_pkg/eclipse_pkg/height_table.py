@@ -13,9 +13,6 @@ Rear (11/14): ticks increase with down_mm. Window 824-1810.
 Rows are (down_mm, id1, id4, id11, id14).
 """
 
-# Hold Present minus old table. 0.7 s cut at 48 mm is not used.
-# 42: +13/-10  45: +14/-10  63: +55/-43  66: +56/-42
-
 # (down_mm, id1, id4, id11, id14)
 HEIGHT_POSITION_TABLE = (
     (14.0, 3238, 3238,  824,  824),

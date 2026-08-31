@@ -1085,7 +1085,7 @@ class EclipseTestController(Node):
             "wheel_odom_speed": self.wheel_odom_speed,
             "traction_efficiency": self.traction_efficiency,
             "has_filtered_odom": self.has_filtered_odom,
-            # 탐침 (학습 스냅샷과 같은 키)
+            # 탐침
             "probe_required": True,
             "has_probe_angle": self.has_probe_angle,
             "probe_angle": self.probe_angle,

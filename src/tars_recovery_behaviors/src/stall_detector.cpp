@@ -105,7 +105,7 @@ BT::NodeStatus StallDetector::tick()
 
   // STALL 판정 기준(복구 쪽): 문자열에 "stall" 포함 여부만 봄.
   //   예: WARN_STALL_PWM_*, FAULT_stall_pwm_high_no_motion_*
-  //   온도/HW 등 FAULT_* 는 "stall" 없어서 여기 안 걸림 (의도, v1.1).
+  //   온도/HW 등 FAULT_* 는 "stall" 없어서 여기 안 걸림.
   for (const auto & sample : safety_snap) {
     const std::string state = toLower(sample.second);
     if (state.find("stall") != std::string::npos) {

@@ -7,8 +7,6 @@
 #   ./scripts/run_jetson_autonomy.sh                        # autonomy only
 #   ENABLE_YOLO_TRT=true ./scripts/run_jetson_autonomy.sh   # autonomy + YOLO TRT
 #   ENABLE_FOXGLOVE=false ./scripts/run_jetson_autonomy.sh
-#   TIDE_GPS_TOPIC=/gps/fix_tide_sim ./scripts/run_jetson_autonomy.sh
-#     # tide_watch only; does NOT feed EKF. Then: ros2 run eclipse_pkg tide_sim_gps
 #   ./scripts/run_jetson_autonomy.sh jebu                   # keepout map name
 #   ./scripts/run_jetson_autonomy.sh start jebu
 #   KEEPOUT_SITE=test ./scripts/run_jetson_autonomy.sh

@@ -109,7 +109,7 @@ class TideWatchNode(Node):
         self.declare_parameter('mudflat_shapefile', '')
         self.declare_parameter('sea_heading_topic', '/tide/sea_heading')
         self.declare_parameter('heading_publish_rate_hz', 0.2)
-        # 기본은 실 GPS. 시뮬은 /gps/fix_tide_sim — /gps/fix 에 가짜를 넣으면 EKF가 오염된다.
+        # 기본은 실 GPS. /gps/fix 에 가짜를 넣으면 EKF가 오염된다.
         self.declare_parameter('gps_topic', '/gps/fix')
         # 조석 조회 시각만 이동. 시스템 시계·use_sim_time·GPS·철수는 그대로.
         self.declare_parameter('tide_clock_offset_hours', 0.0)
@@ -327,8 +327,7 @@ class TideWatchNode(Node):
                 '해안선이 창에 없음 — grow_m 이 fallback 이라 '
                 '만조에도 C 까지 안 찰 수 있다')
 
-        # TideLayer 입력은 /tide/water_polygon_markers.
-        # 예전 갯벌 테두리 keepout 대신 구운 수위선(시간에 따라 α).
+        # TideLayer 입력은 /tide/water_polygon_markers. 구운 수위선(시간에 따라 α).
         water_qos = QoSProfile(
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             depth=1)

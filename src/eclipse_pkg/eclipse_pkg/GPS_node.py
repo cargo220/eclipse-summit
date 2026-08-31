@@ -315,8 +315,7 @@ class GpsNode(Node):
         self.declare_parameter("vel_topic", "/gps/vel")
         self.declare_parameter("heading_topic", "/gps/heading")
         # 조정가능 — 모션 헤딩 발행 최소 지면속도
-        # description.launch 는 0.15 로 덮어씀. 기본도 0.15: bootstrap creep 0.2 가 헤딩을
-        # 만들 수 있게 함. 예전 기본 0.3 은 creep(0.2)보다 커서 헤딩이 안 나올 수 있었음.
+        # description.launch 는 0.15 로 덮어씀. bootstrap creep 0.2 보다 낮아야 헤딩이 나온다.
         self.declare_parameter("heading_min_speed_mps", 0.15)
         # 조정가능 — /gps/heading 신뢰도 게이트 (_heading_is_trustworthy).
         # headAcc는 수신기 heading 정확도(도). speed_acc_factor는 gSpeed가
@@ -383,7 +382,6 @@ class GpsNode(Node):
             0.2, self._publish_visual_heading
         )
 
-        # --- Merged from gps_pose_covariance_odom ---
         self.declare_parameter("pose_covariance_floor", GPS_POSE_COVARIANCE_FLOOR)
         self._pose_cov_floor = float(
             self.get_parameter("pose_covariance_floor").value
@@ -395,7 +393,6 @@ class GpsNode(Node):
             Odometry, '/odometry/gps_raw', self._covariance_floor_callback, 10
         )
 
-        # --- Merged from gps_velocity_odom ---
         self.declare_parameter("speed_variance", 0.004)
         self.declare_parameter("lateral_velocity_variance", 10.0)
         self.declare_parameter("angular_velocity_variance", 10.0)
@@ -451,8 +448,7 @@ class GpsNode(Node):
             self.get_logger().error(f"GPS port connection failed: {exc}")
             raise RuntimeError("GPS connection failed") from exc
 
-        # Soft recover only (no node restart): NTRIP socket bounce + serial reopen.
-        # Used by gps_health_supervisor after GPS-loss W2 timeout.
+        # Soft recover: NTRIP socket bounce + serial reopen. 노드 재시작 없음.
         self._recover_srv = self.create_service(
             Trigger, "/gps/recover", self._recover_callback
         )
@@ -864,7 +860,6 @@ class GpsNode(Node):
         pose.pose.covariance[35] = self._heading_yaw_variance
         self._pub_heading_visual.publish(pose)
 
-    # --- gps_pose_covariance_odom merge ---
     def _covariance_floor_callback(self, msg: Odometry) -> None:
         corrected = list(msg.pose.covariance)
         corrected[0] = max(float(corrected[0]), self._pose_cov_floor)
@@ -872,7 +867,6 @@ class GpsNode(Node):
         msg.pose.covariance = corrected
         self._pub_odom_gps.publish(msg)
 
-    # --- gps_velocity_odom merge ---
     def _wheel_odom_callback(self, msg: Odometry) -> None:
         self._last_wheel_odom_time = self.get_clock().now()
         self._last_wheel_vx = msg.twist.twist.linear.x

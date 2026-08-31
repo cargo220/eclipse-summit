@@ -7,7 +7,7 @@ import time
 import os
 import math
 
-# --- 기본 공분산 (최신 분석 결과 반영: 동적 공분산 기반) ---
+# --- 기본 공분산 ---
 BASE_AV_COV  = [4.99e-04, 8.86e-04, 1.65e-04]
 BASE_LA_COV  = [2.14e-02, 5.92e-03, 1.70e-02]
 BASE_ORI_COV = [1.0e-02, 1.0e-02, 5.0e-02]  # Experiment needed.
@@ -39,9 +39,7 @@ MAG_YAW_VARIANCE = 0.033
 # mz 실측이 z축 하드아이언 오프셋(+36.8µT)으로 신뢰 불가라, V-모델 투영에서 이 값을 쓴다.
 MAG_VERTICAL_UT = 41.4
 # 기울임 홀드: roll/pitch 절대값이 이 각도(도)를 넘으면 mag heading 발행을 멈춘다.
-# 로봇 자체(모터·철제) 자기장 왜곡이 자세에 따라 변해 큰 기울임에서 mag 는 신뢰
-# 불가 — EKF가 마지막 yaw + 각속도 적분으로 유지한다.
-# 10°로 시작했으나 실측상 pitch 7.6°에서도 mag 가 19° 튀어 5°로 낮춤.
+# 로봇 자체 자기장 왜곡이 자세에 따라 변한다. 실측 pitch 7.6°에서 mag 19° 튐.
 TILT_HOLD_DEG = 8.0
 
 
@@ -277,9 +275,7 @@ class IahrsDriver(Node):
         try:
             if self.ser.in_waiting > 0:
                 data = self.ser.read(self.ser.in_waiting)
-                # 이 틱에 도착한 완전한 라인을 전부 파싱한다. 부분 라인은 버퍼에
-                # 남겨 다음 틱으로 넘긴다(예전에는 splitlines()[-1] 이 잘린 마지막
-                # 줄을 집어 그 틱을 통째로 버렸다).
+                # 완전한 라인만 파싱한다. 부분 라인은 다음 틱으로 넘긴다.
                 samples, self._rx_buffer = parse_imu_lines(self._rx_buffer, data)
                 if not samples:
                     return
