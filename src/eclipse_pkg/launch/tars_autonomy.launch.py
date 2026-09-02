@@ -220,18 +220,10 @@ def generate_launch_description():
     # navsat_transform_node uses that yaw (use_odometry_yaw: true) and
     # reads /gps/fix directly.
 
-    # 4c. Static TF: camera_link → base_link. RealSense publishes internal
-    # camera_link → camera_depth_optical_frame, but the link to base_link
-    # is missing. Without this, costmap can't transform camera points to
-    # robot frame (Message Filter dropping errors).
-    camera_tf = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0.270', '0.000', '0.050',
-                   '0.0', '0.0', '0.0',
-                   'base_link', 'camera_link'],
-        output='screen'
-    )
+    # 4c. base_link → camera_link is a fixed joint in robot.urdf, so
+    # robot_state_publisher (description.launch.py) already latches it on
+    # /tf_static. A second static_transform_publisher here would fight that
+    # edge (TF_REPEATED_DATA). RealSense still owns camera_link → optical.
 
     # 4d. Probe angle sensor (Arduino). Parameters from
     # config/probe_sensor.yaml (/dev/ttyPROBE, 115200). The yaml top-level
@@ -281,7 +273,6 @@ def generate_launch_description():
         gps_commander_node,
         gps_health_supervisor_node,
         tide_watch_node,
-        camera_tf,
         probe_sensor_node,
         foxglove_bridge_node,
     ])
