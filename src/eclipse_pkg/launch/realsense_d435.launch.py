@@ -3,8 +3,8 @@
 Default topics (camera_namespace:=camera, camera_name:=camera):
   /camera/camera/color/image_raw
   /camera/camera/aligned_depth_to_color/image_raw
-  /camera/camera/depth/color/points (enable_pointcloud:=true by default;
-  required by nav2_params_mudflat.yaml's local/global costmap obstacle layers)
+  /camera/camera/depth/color/points (pointcloud_filter input)
+  /camera/points_filtered (Nav2 costmap obstacle layers)
 """
 
 import os
@@ -116,7 +116,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'depth_profile',
             # Lower FPS than color: costmap does not need 30 Hz depth clouds.
-            # Color stays 320x240x30 for YOLO. (2026-08-10 load tuning)
+            # Color 320x240x30 is a load tradeoff, not a detector requirement.
             default_value='424x240x15',
             description='depth_module.depth_profile (WxHxFPS).',
         ),

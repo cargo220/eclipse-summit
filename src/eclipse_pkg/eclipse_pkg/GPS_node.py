@@ -317,9 +317,8 @@ class GpsNode(Node):
         self.declare_parameter("fix_topic", "/gps/fix")
         self.declare_parameter("vel_topic", "/gps/vel")
         self.declare_parameter("heading_topic", "/gps/heading")
-        # 조정가능 — 모션 헤딩 발행 최소 지면속도 (tars_tuning.yaml § gps_heading_speed_gates)
-        # description.launch 는 0.15 로 덮어씀. 기본도 0.15: bootstrap creep 0.2 가 헤딩을
-        # 만들 수 있게 함. 예전 기본 0.3 은 creep(0.2)보다 커서 헤딩이 안 나올 수 있었음.
+        # 조정가능 — 모션 헤딩 발행 최소 지면속도(m/s).
+        # description.launch 가 0.15 로 덮어쓴다. 기본도 0.15.
         self.declare_parameter("heading_min_speed_mps", 0.15)
         # 조정가능 — /gps/heading 신뢰도 게이트 (2026-08-12 추가, 근거는
         # _heading_is_trustworthy docstring). headAcc 임계는 수신기가 스스로
@@ -348,7 +347,7 @@ class GpsNode(Node):
         # 처음엔 "legacy 냐 MSM 이냐"가 갈림길이라고 봤으나 VRS-RTCM34 가 MSM5 를
         # VRS-RTCM32는 현재 RTS2 계정으로 접속 가능한 NGII 가상 기준국이다.
         # VRS는 아래 NTRIP 연결 후 실제 GPS 위치의 GGA를 보내야 보정 스트림이
-        # 생성된다. 비밀번호는 소스에 저장하지 않고 launch 환경변수로 주입한다.
+        # 생성된다. ntrip_pass 는 launch 파라미터로 넘긴다.
         #
         self.declare_parameter("ntrip_host", "rts2.ngii.go.kr")
         self.declare_parameter("ntrip_port", 2101)

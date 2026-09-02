@@ -283,10 +283,9 @@ class EclipseTestController(Node):
         self.height_temp_fault = False
         self.height_temp_fault_id = None
         self.height_temp_fault_c = None
-        # Height AI policy runs in-process (see height_ai_apply_loop). Declared
-        # as parameters so a trained checkpoint can be swapped in without code
-        # changes, and so description_ai.launch.py can disable it while the
-        # dataset random-probe FSM owns the height actuator.
+        # Height AI policy runs in-process (see height_ai_apply_loop).
+        # enable_height_ai / height_ai_model_path swap a checkpoint without
+        # a code change. Empty path = stub hold.
         self.declare_parameter('enable_height_ai', True)
         self.declare_parameter('height_ai_model_path', '')
         self.height_ai_enabled = bool(
@@ -1079,15 +1078,8 @@ class EclipseTestController(Node):
     def height_ai_observation(self):
         """Build the policy input from this node's own attributes.
 
-        KEY NAMES MUST MATCH eclipse_ai_controller.height_ai_state_snapshot()
-        exactly. That snapshot is what the training JSONL records, so reusing
-        its vocabulary here is what keeps training and serving on one contract
-        — three of the five P0 defects found in the 2026-08-10 review were
-        exactly this kind of name mismatch. test_height_ai_observation.py
-        asserts the two key sets stay aligned.
-
-        Probe keys match eclipse_ai_controller.height_ai_state_snapshot()
-        so a later predictor can use contact/angle without a rename.
+        State keys must match height_ai_policy.DEFAULT_STATE_FEATURES.
+        Training JSONL and this snapshot share that vocabulary.
         """
         probe_age_sec = (
             time.monotonic() - self.probe_angle_recv_time

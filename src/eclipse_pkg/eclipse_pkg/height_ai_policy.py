@@ -58,8 +58,7 @@ DEFAULT_EKF_DROP_WEIGHT = 1.0
 class HeightObservation:
     """One policy input sample.
 
-    ``state`` uses the same key names as
-    eclipse_ai_controller.height_ai_state_snapshot().
+    ``state`` keys must match DEFAULT_STATE_FEATURES.
     """
 
     current_down_mm: float

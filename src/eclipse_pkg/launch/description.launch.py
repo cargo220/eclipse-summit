@@ -130,14 +130,13 @@ def generate_launch_description():
                 'frame_id': 'gps_link',
                 'fix_topic': '/gps/fix',
                 'vel_topic': '/gps/vel',
-                # NGII RTS2 VRS. 비밀번호는 TARS_NTRIP_PASS 환경변수로 주입한다.
+                # NGII RTS2 VRS. ntrip_pass 는 launch 파라미터.
                 'ntrip_host': 'rts2.ngii.go.kr',
                 'ntrip_port': 2101,
                 'ntrip_user': 'tars260223',
                 'ntrip_pass': 'ngii',
                 'mountpoint': 'VRS-RTCM32',
-                # 조정가능 — GPS 모션 헤딩 최소 속도 (tars_tuning § gps_heading_speed_gates)
-                # bootstrap creep 0.18 m/s 보다 낮아야 부팅 헤딩 샘플이 나옴.
+                # 조정가능 — GPS 모션 헤딩을 내려면 이 속도(m/s) 이상.
                 'heading_min_speed_mps': 0.15,
             }],
         ),

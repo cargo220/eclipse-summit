@@ -1,9 +1,9 @@
 # Foxglove 광고 목록. 정규식은 이름 전체 일치(^...$).
-# 제외: 수다/수명주기, 원본 카메라·점구름. 영상은 YOLO compressed 만.
+# 제외: 수다/수명주기, 원본 카메라·점구름.
 /**:
   ros__parameters:
     port: 8765
-    # 글로벌 costmap 500 m @ 0.1 m OccupancyGrid ≈ 25 MB.
+    # 글로벌 costmap 4000 m @ 0.8 m OccupancyGrid (5000×5000).
     # 기본 10 MB면 foxglove_bridge가 메시지를 드롭한다. 기동 시에만 읽힘.
     send_buffer_limit: 67108864
     min_qos_depth: 1

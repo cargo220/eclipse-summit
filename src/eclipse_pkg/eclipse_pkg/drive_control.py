@@ -15,7 +15,7 @@ DRIVE_STATE_TURNING = 'TURNING'  # 조향 입력이 큰 회전 상태
 
 @dataclass(frozen=True)
 class DriveControlConfig:
-    # 조정가능 — 수동/상한 속도·가감속 (tars_tuning.yaml § speeds / velocity_smoother)
+    # 조정가능 — 수동/상한 속도·가감속.
     # 선가속/감속은 수동이 자율 smoother(0.30/0.40)보다 보수적(0.10/0.25).
     # 각가속은 smoother wz 축(0.7)과 맞춤 (예전 1.0은 갯벌에 여유 과다).
     max_linear_speeds: tuple[float, ...] = (PLATFORM_MAX_LINEAR_MPS,)  # 조정가능: 최대 선속도(m/s). D250·G=2·모터 130 tick
