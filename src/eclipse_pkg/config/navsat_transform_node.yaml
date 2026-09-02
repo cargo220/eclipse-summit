@@ -1,22 +1,24 @@
 navsat_transform_node:
   ros__parameters:
     # --- 기본 설정 ---
-    # GPS fix보다 높은 주기는 불필요.
+    # 30Hz was higher than GPS fix rate and inflated wakeups/load; try 10Hz.
     frequency: 10.0
 
     # TF lookup 타임아웃. 기본 0.0은 "최신 transform만"이라 체인이 잠깐 비어도
     # 즉시 에러를 뿌린다. 1.0초로 올려 odom->base_link/map->odom 체인이 뜰
-    # 때까지 기다리게 해 "Could not obtain map -> base_link" 로그 폭주를 막는다.
+    # 때까지 기다리게 해 "Could not obtain map -> base_link" 로그 폭주를 막는다
+    # (robot_localization navsat_transform.cpp 기본값 0.0, 2026-08-15).
     transform_timeout: 1.0
 
     # --- 좌표 변환 설정 ---
     # 지자기 헤딩(iahrs.py)이 이미 편각을 더해 진북으로 발행하므로, 여기서 다시
-    # 더하면 이중 보정이 된다. 0으로 둔다.
+    # 더하면 이중 보정이 된다. 0 으로 둔다(2026-08-13 지자기 헤딩 교체).
     magnetic_declination_radians: 0.0
 
     # UTM->map 방위 datum 을 EKF 필터링 yaw(/odometry/filtered)에서 잠근다.
-    # false면 /imu/data raw 쿼터니언(부팅 0점)으로 datum이 잠긴다.
-    # true면 보정된 odometry yaw를 datum으로 쓴다.
+    # false(기본)면 /imu/data 의 raw 쿼터니언(부팅 0점)을 쓰므로, gps_fix_gate_node 가
+    # fix 를 늦춰도 datum 이 부팅 방향에 잠긴다(robot_localization 소스 실측 2026-08-13).
+    # true 로 바꿔 done(지자기 set_pose) 후 보정된 yaw 를 datum 으로 쓴다.
     use_odometry_yaw: true
 
     # IMU yaw=0 기준점 설정.

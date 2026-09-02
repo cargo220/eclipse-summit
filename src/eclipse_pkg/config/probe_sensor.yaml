@@ -3,7 +3,12 @@ probe_sensor:
     port: /dev/ttyPROBE
     baudrate: 115200
     serial_timeout: 0.02
-    # 폴링 주기는 처리량이 아니라 지연. 아두이노 ~21Hz에 맞춘다.
+    # 2026-08-11: 0.1 -> 0.05 복원. load tuning 캠페인(커밋 91475d0a)에서
+    # "0.05=20Hz was wake-heavy on load" 로 낮췄으나, 그 부하 진단이 실측으로
+    # 반증됐다(원인은 노드 개수, CPU 는 70% idle). 폴링 주기는 처리량이 아니라
+    # 지연을 결정한다 — 라인 버퍼링 수정 이후 처리량은 어느 쪽이든 아두이노
+    # 송신률(~21Hz)을 따라가지만, 10Hz 폴링은 샘플이 시리얼 버퍼에서 최대
+    # 100ms 대기한다. probe_angle 은 접지/침하 판단 입력이라 지연이 곧 품질이다.
     timer_period: 0.05
     reconnect_period: 2.0
     publish_prefix: /probe

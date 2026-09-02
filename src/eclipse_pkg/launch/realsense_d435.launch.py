@@ -1,4 +1,4 @@
-"""RealSense D435 launch.
+"""Standalone D435 launch for Docker/Jetson smoke tests.
 
 Default topics (camera_namespace:=camera, camera_name:=camera):
   /camera/camera/color/image_raw
@@ -116,7 +116,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'depth_profile',
             # Lower FPS than color: costmap does not need 30 Hz depth clouds.
-            # Color stays 320x240x30 for YOLO.
+            # Color stays 320x240x30 for YOLO. (2026-08-10 load tuning)
             default_value='424x240x15',
             description='depth_module.depth_profile (WxHxFPS).',
         ),

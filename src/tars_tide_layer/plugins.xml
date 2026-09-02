@@ -3,7 +3,9 @@
          type="tars_tide_layer::TideLayer"
          base_class_type="nav2_costmap_2d::Layer">
     <description>
-      Marks /tide/water_polygon_markers as lethal. Open strips are stroked, not filled.
+      TARS tide-aware costmap layer. Subscribes to
+      /tide/water_polygon_markers (time-varying waterline; open strips are stroked, not filled)
+      and marks cells inside any ring (+ margin) as LETHAL_OBSTACLE.
     </description>
   </class>
 </library>

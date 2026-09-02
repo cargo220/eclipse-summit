@@ -14,7 +14,10 @@ t=(0.270, 0.000, 0.050), q=(-0.5, 0.5, -0.5, 0.5)):
 so the robot-frame ROI is a simple axis-aligned box in camera
 coordinates (no per-point rotation).
 
-Voxel downsample uses sort + first-of-run instead of ``np.unique``.
+Hot path note (2026-08-10 py-spy on Jetson): ~40% of process samples were in
+``np.unique`` during voxel downsample. Replaced with sort + first-of-run
+mask (same one-point-per-voxel occupancy for costmaps; which representative
+point is kept may differ from ``unique``'s first-original-order rule).
 """
 from __future__ import annotations
 
@@ -63,7 +66,8 @@ def _voxel_first_indices(
         | ((ky.astype(np.int64) + 32768) << 17)
         | (kz.astype(np.int64) + 32768)
     )
-    # sort + first-of-run instead of np.unique(..., return_index).
+    # sort + first-of-run: typically much faster than np.unique(..., return_index)
+    # for large N (py-spy hotspot on Jetson Xavier).
     order = np.argsort(keys, kind='quicksort')
     ks = keys[order]
     n = ks.size

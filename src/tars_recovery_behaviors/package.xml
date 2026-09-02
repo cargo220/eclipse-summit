@@ -3,8 +3,18 @@
 <package format="3">
   <name>tars_recovery_behaviors</name>
   <version>0.2.0</version>
-  <description>TARS custom Nav2 recovery behaviors and BT condition nodes</description>
-  <maintainer email="ley184526@icloud.com">cargo220</maintainer>
+  <description>
+    TARS custom Nav2 recovery behaviors. v1 ships MudAssess, a
+    measurement-only drop-in replacement for the stock Wait behavior that
+    records mudflat signals (probe angle availability, wheel motor currents,
+    stall state) during recovery waits; record only: it never commands
+    velocity and never changes the recovery outcome. v2 adds StallDetector,
+    a BehaviorTree.CPP v3 ConditionNode that classifies FollowPath failures
+    (stall-in-mud vs obstacle/unknown) so the recovery fallback trees can
+    branch; fail-open: missing window data falls through to the default
+    obstacle branch.
+  </description>
+  <maintainer email="lee@todo.todo">lee</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

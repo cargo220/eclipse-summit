@@ -37,8 +37,11 @@ private:
   rclcpp::Node::SharedPtr node_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr safety_sub_;
 
-  // bt_navigator client 노드는 spin되지 않는다. 기본 콜백그룹 구독은 콜백이
-  // 실행되지 않아 창이 비고 fail-open 된다. 전용 콜백그룹 + tick마다 spin.
+  // bt_navigator 의 client 노드는 아무도 spin 하지 않는다. 구독을 기본
+  // 콜백그룹에 두면 콜백이 영원히 실행되지 않아, 퍼블리셔가 멀쩡한데도 창이
+  // 항상 비고 판정이 fail-open 으로 새어나간다(2026-08-12 라이브에서 실제로
+  // 세 탐지기가 동시에 눈이 멀었다). Nav2 자체 조건 노드와 같은 방식으로
+  // 전용 콜백그룹 + 로컬 executor 를 두고 tick 마다 직접 spin 한다.
   rclcpp::CallbackGroup::SharedPtr callback_group_;
   rclcpp::executors::SingleThreadedExecutor callback_group_executor_;
 

@@ -1309,6 +1309,184 @@ def waterline_rings_at_alpha(steps, alpha):
     return list(best[1])
 
 
+WINDOW_BORDER_PAD_M = 24.0
+WATERLINE_STITCH_M = 250.0
+COAST_NEAR_MUD_M = 80.0
+COAST_MIN_LEN_M = 80.0
+
+
+def _aabb4(aabb):
+    """(minx, miny, maxx, maxy). dict 또는 4튜플."""
+    if not aabb:
+        return None
+    if isinstance(aabb, dict):
+        try:
+            return (
+                float(aabb['minx']), float(aabb['miny']),
+                float(aabb['maxx']), float(aabb['maxy']))
+        except (KeyError, TypeError, ValueError):
+            return None
+    try:
+        minx, miny, maxx, maxy = aabb
+        return (float(minx), float(miny), float(maxx), float(maxy))
+    except (TypeError, ValueError):
+        return None
+
+
+def _border_sides(x_val, y_val, aabb, pad_m):
+    minx, miny, maxx, maxy = aabb
+    pad = float(pad_m)
+    sides = []
+    if x_val <= minx + pad:
+        sides.append('W')
+    if x_val >= maxx - pad:
+        sides.append('E')
+    if y_val <= miny + pad:
+        sides.append('S')
+    if y_val >= maxy - pad:
+        sides.append('N')
+    return sides
+
+
+def drop_window_border_segments(rings, aabb, pad_m=WINDOW_BORDER_PAD_M):
+    """타일 창 변을 따라가는 선분만 잘라 연다. 상자 유령 변 제거."""
+    box = _aabb4(aabb)
+    if box is None:
+        return [list(ring) for ring in rings or () if ring and len(ring) >= 2]
+    try:
+        pad = float(pad_m)
+    except (TypeError, ValueError):
+        pad = WINDOW_BORDER_PAD_M
+    if not math.isfinite(pad) or pad < 0.0:
+        pad = WINDOW_BORDER_PAD_M
+    out = []
+    for ring in rings or ():
+        if not ring or len(ring) < 2:
+            continue
+        pts = [xy for xy in (_xy_pair(pt) for pt in ring) if xy is not None]
+        if len(pts) < 2:
+            continue
+        closed = (
+            math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1])
+            <= max(1.0, pad))
+        edges = list(zip(pts, pts[1:]))
+        if closed:
+            edges.append((pts[-1], pts[0]))
+        current = []
+        for start, end in edges:
+            share = set(_border_sides(start[0], start[1], box, pad)) & set(
+                _border_sides(end[0], end[1], box, pad))
+            if share:
+                if len(current) >= 2:
+                    out.append(current)
+                current = []
+                continue
+            if not current:
+                current = [start, end]
+            else:
+                current.append(end)
+        if len(current) >= 2:
+            out.append(current)
+    return out
+
+
+def stitch_waterline_rings(rings, join_m=WATERLINE_STITCH_M):
+    """끝점이 가까운 수위선 조각을 잇는다."""
+    try:
+        join = float(join_m)
+    except (TypeError, ValueError):
+        join = WATERLINE_STITCH_M
+    if not math.isfinite(join) or join < 0.0:
+        join = WATERLINE_STITCH_M
+    clean = []
+    for ring in rings or ():
+        pts = [xy for xy in (_xy_pair(pt) for pt in ring) if xy is not None]
+        if len(pts) >= 2:
+            clean.append(pts)
+    return _stitch_polylines(clean, join_m=join)
+
+
+def _line_length(coords):
+    length = 0.0
+    for a_pt, b_pt in zip(coords, coords[1:]):
+        length += math.hypot(b_pt[0] - a_pt[0], b_pt[1] - a_pt[1])
+    return length
+
+
+def _iter_lines(geom):
+    if geom is None or getattr(geom, 'is_empty', True):
+        return
+    gtype = getattr(geom, 'geom_type', '')
+    if gtype == 'LineString':
+        if geom.length > 0.0:
+            yield geom
+        return
+    geoms = getattr(geom, 'geoms', None)
+    if geoms is None:
+        return
+    for part in geoms:
+        yield from _iter_lines(part)
+
+
+def coast_along_mud_rings(
+        coast_geoms, mud_polys,
+        near_m=COAST_NEAR_MUD_M,
+        min_len_m=COAST_MIN_LEN_M,
+        join_m=WATERLINE_STITCH_M):
+    """α=1: 갯벌 복도와 겹치는 해안만 클립·이어붙임. 조각 keep/drop 아님."""
+    if shapely_unary_union is None:
+        return []
+    mud = []
+    for poly in mud_polys or ():
+        for part in _explode_polygons(poly) or ():
+            valid = _valid_polygon(part)
+            if valid is not None and valid.area > 0.0:
+                mud.append(valid)
+    if not mud:
+        return []
+    try:
+        near = float(near_m)
+        min_len = float(min_len_m)
+    except (TypeError, ValueError):
+        near, min_len = COAST_NEAR_MUD_M, COAST_MIN_LEN_M
+    if not math.isfinite(near) or near <= 0.0:
+        near = COAST_NEAR_MUD_M
+    mud_u = mud[0] if len(mud) == 1 else shapely_unary_union(mud)
+    try:
+        corridor = mud_u.buffer(near)
+    except (TypeError, ValueError):
+        return []
+    if corridor is None or corridor.is_empty:
+        return []
+    segs = []
+    for raw in coast_geoms or ():
+        line = _as_line(raw)
+        if line is None or line.is_empty:
+            continue
+        try:
+            hit = line.intersection(corridor)
+        except (TypeError, ValueError):
+            continue
+        for part in _iter_lines(hit):
+            coords = [
+                xy for xy in (_xy_pair(c) for c in part.coords)
+                if xy is not None]
+            if len(coords) >= 2:
+                segs.append(coords)
+    stitched = stitch_waterline_rings(segs, join_m=join_m)
+    return [row for row in stitched if _line_length(row) >= min_len]
+
+
+def cleanup_waterline_rings(
+        rings, aabb=None, pad_m=WINDOW_BORDER_PAD_M,
+        join_m=WATERLINE_STITCH_M, stitch=True):
+    """창 변 유령 선 제거 후 (선택) stitch."""
+    cleaned = drop_window_border_segments(rings, aabb, pad_m=pad_m)
+    if stitch:
+        cleaned = stitch_waterline_rings(cleaned, join_m=join_m)
+    return cleaned
+
+
 def keepout_geojson_filename(site):
     """맵 이름 → config 파일명. keepout_<이름>_perimeter.geojson."""
     name = str(site or '').strip()

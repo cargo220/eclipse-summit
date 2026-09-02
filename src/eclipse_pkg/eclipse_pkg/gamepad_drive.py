@@ -69,7 +69,7 @@ class GamepadDriveNode(Node):
         # 조정가능 — launch/파라미터로 덮어쓰기 가능 (기본=플랫폼 최대 선속도)
         max_linear_speeds = self._float_list_param(
             'max_linear_speeds',
-            [0.9742],  # 조정가능 기본: m/s. D250·G2.5·130 tick ≈ PLATFORM_MAX_LINEAR_MPS
+            [0.7794],  # 조정가능 기본: m/s. D250·G=2·130 tick ≈ PLATFORM_MAX_LINEAR_MPS
         )  # 속도 모드별 최대 선속도 목록
         config = DriveControlConfig(
             max_linear_speeds=tuple(max_linear_speeds),  # 조정가능: 모드별 최대 선속도
@@ -129,8 +129,9 @@ class GamepadDriveNode(Node):
         self.last_joy_time: float | None = None  # 마지막 Joy 메시지 수신 시간
         self.previous_buttons: list[int] = []  # rising edge 검출용 직전 버튼 배열
         self.previous_height_axis_direction = 0  # D-pad 높낮이 rising edge 검출 상태
-        # 유휴 상태에서 0 Twist를 매 tick 재발행하면 다른 /cmd_vel 퍼블리셔와 경합한다.
-        # 0으로 전환될 때만 한 번 발행한다.
+        # 유휴 상태에서 0 Twist를 매 tick 재발행하면 수동 `ros2 topic pub` 테스트 등
+        # 다른 /cmd_vel 퍼블리셔와 경합한다. 0 상태로 "전환"될 때만 한 번 발행하고,
+        # 이미 0인 동안은 재발행하지 않는다(2026-08-10 docker_2/docker_3 병합).
         self._last_cmd_vel_was_zero = True
 
         self.cmd_vel_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
@@ -153,7 +154,11 @@ class GamepadDriveNode(Node):
             Bool, AUTONOMY_ACTIVE_TOPIC, self._autonomy_active_callback, 10
         )
 
-        # 수동 탈환 경로라 지연이 곧 안전 문제다.
+        # 2026-08-11: 10.0 -> 20.0 복원. load tuning 캠페인(커밋 91475d0a)에서
+        # 20 -> 10 으로 낮췄으나 그 전제가 실측으로 반증됐다 — 부하의 원인은 발행
+        # 비용이 아니라 노드 개수였고, CPU 는 70% 놀고 있었다. 이 경로는 조종자가
+        # 자율주행을 수동으로 뺏는 경로라 응답 지연이 곧 안전 문제다(10Hz = 최대
+        # 100ms 지연). 되돌리기 전에 부하 여유를 실측으로 확인했다.
         publish_rate_hz = float_param(self, 'publish_rate_hz', 20.0)
         timer_period = 1.0 / max(1.0, publish_rate_hz)
         self.create_timer(timer_period, self.publish_drive_command)

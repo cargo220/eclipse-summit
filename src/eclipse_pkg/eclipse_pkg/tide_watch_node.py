@@ -57,8 +57,12 @@ from eclipse_pkg.tide_waterline import (
     DEFAULT_EDGE_INSET_RATIO,
     DEFAULT_RADIUS_M,
     DEFAULT_STATION_M,
+    WATERLINE_STITCH_M,
+    WINDOW_BORDER_PAD_M,
     bbox_of_polygons,
+    cleanup_waterline_rings,
     clip_geoms_to_window,
+    coast_along_mud_rings,
     filter_keepout_rings,
     keepout_grow_span_m,
     load_keepout_geojson,
@@ -75,8 +79,12 @@ from eclipse_pkg.tide_waterline_tiles import (
     baked_keepout_tiles,
     baked_tiles,
     load_tile_index,
-    lookup_tile_sticky,
-    tile_keepout_path,
+    neighbor_tile_records,
+    normalize_keepout_site,
+    pick_baked_tile_path,
+    pin_near_tile_edge,
+    runtime_map_source,
+    tile_by_id,
     tile_steps_path,
 )
 
@@ -109,7 +117,7 @@ class TideWatchNode(Node):
         self.declare_parameter('mudflat_shapefile', '')
         self.declare_parameter('sea_heading_topic', '/tide/sea_heading')
         self.declare_parameter('heading_publish_rate_hz', 0.2)
-        # 기본은 실 GPS. /gps/fix 에 가짜를 넣으면 EKF가 오염된다.
+        # 기본은 실 GPS. 시뮬은 /gps/fix_tide_sim — /gps/fix 에 가짜를 넣으면 EKF가 오염된다.
         self.declare_parameter('gps_topic', '/gps/fix')
         # 조석 조회 시각만 이동. 시스템 시계·use_sim_time·GPS·철수는 그대로.
         self.declare_parameter('tide_clock_offset_hours', 0.0)
@@ -192,6 +200,8 @@ class TideWatchNode(Node):
         self._current_lat = None
         self._current_lon = None
         self._current_station_code = self.ops_config.get('station_code', 'DT_0068')
+        self._station_name = ''
+        self._station_distance_m = None
         self._home_x = None
         self._home_y = None
         home_qos = QoSProfile(
@@ -259,38 +269,21 @@ class TideWatchNode(Node):
                 'mudflat_shapefile 미설정 — 해측 띠는 비움')
 
         self._baked_rings_5186 = []
-        fallback_grow = float(
+        self._fallback_grow = float(
             (self.ops_config.get('retreat') or {}).get(
                 'fallback_mud_width_m', 400.0))
-        keepout_path = resolve_keepout_geojson_path(
-            str(self.get_parameter('keepout_geojson').value or ''),
-            site=str(self.get_parameter('keepout_site').value or ''))
-        if keepout_path:
-            try:
-                self._baked_rings_5186 = filter_keepout_rings(
-                    load_keepout_geojson(keepout_path))
-                self.get_logger().info(
-                    f'구운 keepout: {len(self._baked_rings_5186)} rings '
-                    f'({keepout_path})')
-            except (OSError, ValueError, TypeError) as exc:
-                self.get_logger().error(f'keepout geojson 로드 실패: {exc}')
-        else:
-            self.get_logger().warn('keepout_geojson 없음 — 해측 띠는 라이브/빈 값')
-
-        origin, radius = window_from_rings(
-            self._baked_rings_5186, fallback_grow)
-        coast_for_span = []
-        self._mud_for_grow = list(self._mudflat_polys)
-        if origin is not None and radius is not None:
-            if self._coastline:
-                coast_for_span = clip_geoms_to_window(
-                    self._coastline, origin, radius)
-            if self._mudflat_polys:
-                self._mud_for_grow = clip_geoms_to_window(
-                    self._mudflat_polys, origin, radius)
-        self._coast_for_front = coast_for_span
-        self._grow_m = keepout_grow_span_m(
-            self._baked_rings_5186, coast_for_span, fallback_m=fallback_grow)
+        self._map_source = runtime_map_source(
+            keepout_site=normalize_keepout_site(
+                self.get_parameter('keepout_site').value),
+            keepout_geojson=str(
+                self.get_parameter('keepout_geojson').value or ''),
+            waterline_steps_json=str(
+                self.get_parameter('waterline_steps_json').value or ''),
+            waterline_tiles_dir=str(
+                self.get_parameter('waterline_tiles_dir').value or ''),
+            keepout_tiles_dir=str(
+                self.get_parameter('keepout_tiles_dir').value or ''),
+        )
         self._wl_alpha_key = None
         self._wl_rings_5186 = []
         self._waterline_ring_count = 0
@@ -299,35 +292,34 @@ class TideWatchNode(Node):
         self._wl_tiles = []
         self._wl_tiles_dir = ''
         self._wl_tile_id = None
-        steps_path = resolve_waterline_steps_path(
-            str(self.get_parameter('waterline_steps_json').value or ''),
-            site=str(self.get_parameter('keepout_site').value or ''))
-        if steps_path:
-            try:
-                self._wl_steps = load_waterline_steps(steps_path)
-                self.get_logger().info(
-                    f'수위선 스텝 {len(self._wl_steps)}개 ({steps_path})')
-            except (OSError, ValueError, TypeError) as exc:
-                self.get_logger().error(f'수위선 스텝 로드 실패: {exc}')
-        else:
-            self.get_logger().warn(
-                'waterline steps 없음 — 수위선 마커는 비움. '
-                'scripts/bake_tide_waterline.py 로 구워라')
+        self._wl_tile = None
+        self._wl_neighbor_packs = []
         self._ko_tiles_dir = ''
         self._ko_tiles = []
         self._ko_tile_id = None
-        self._load_waterline_tiles()
-        self._load_keepout_tiles()
+        self._mud_for_grow = list(self._mudflat_polys)
+        self._coast_for_front = []
+        self._grow_m = self._fallback_grow
+        if self._map_source == 'forced_site':
+            self._load_named_keepout_and_steps()
+        else:
+            self.get_logger().info(
+                f'맵 소스 {self._map_source} — named keepout/수위선 파일 안 씀')
+            self._load_waterline_tiles()
+            self._load_keepout_tiles()
+        self._recompute_grow_m()
         self.get_logger().info(
             f'수위선 grow_m={self._grow_m:.1f} m '
-            f'(fallback={fallback_grow:.1f}, coast={len(coast_for_span)}, '
+            f'(fallback={self._fallback_grow:.1f}, '
+            f'coast={len(self._coast_for_front)}, '
             f'mud={len(self._mud_for_grow)})')
-        if not coast_for_span:
+        if not self._coast_for_front:
             self.get_logger().warn(
                 '해안선이 창에 없음 — grow_m 이 fallback 이라 '
                 '만조에도 C 까지 안 찰 수 있다')
 
-        # TideLayer 입력은 /tide/water_polygon_markers. 구운 수위선(시간에 따라 α).
+        # TideLayer 입력은 /tide/water_polygon_markers.
+        # 예전 갯벌 테두리 keepout 대신 구운 수위선(시간에 따라 α).
         water_qos = QoSProfile(
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             depth=1)
@@ -445,6 +437,19 @@ class TideWatchNode(Node):
             target=self._refresh_worker, args=(now,), daemon=True)
         thread.start()
 
+    def _start_station_refresh(self, now):
+        """관측소가 바뀌면 그 코드 캐시를 받는다. 실패해도 옛 시계열은 유지."""
+        if self._fetch_in_progress:
+            return
+        if not bool(self.get_parameter('auto_fetch').value):
+            self.get_logger().info(
+                'auto_fetch off — 관측소 코드만 변경, 캐시 fetch 생략')
+            return
+        self._fetch_in_progress = True
+        thread = threading.Thread(
+            target=self._refresh_worker, args=(now,), daemon=True)
+        thread.start()
+
     def _refresh_worker(self, now):
         try:
             result = ensure_operational_cache(self.ops_config, now)
@@ -456,6 +461,10 @@ class TideWatchNode(Node):
                     self.get_logger().info(
                         f"운용일 캐시 갱신: {result['path']} ({result['reason']})"
                     )
+                elif self._cache_ok:
+                    self.get_logger().error(
+                        f"운용일 캐시 갱신 실패, 옛 캐시 유지: {result['reason']}"
+                    )
                 else:
                     self._clear_cache(now, result['reason'])
                     self.get_logger().error(
@@ -463,33 +472,43 @@ class TideWatchNode(Node):
                     )
         except (OSError, ValueError, RuntimeError) as exc:
             with self._cache_lock:
-                self._clear_cache(now, 'fetch_failed')
-            self.get_logger().error(f'운용일 캐시 갱신 예외: {exc}')
+                if self._cache_ok:
+                    self.get_logger().error(
+                        f'운용일 캐시 갱신 예외, 옛 캐시 유지: {exc}')
+                else:
+                    self._clear_cache(now, 'fetch_failed')
+                    self.get_logger().error(f'운용일 캐시 갱신 예외: {exc}')
         finally:
             self._fetch_in_progress = False
 
     def _gps_callback(self, msg):
-        """GPS 위치를 저장하고, 켜져 있으면 최근접 관측소를 고른다."""
-        from eclipse_pkg.tide_plan import find_nearest_station
+        """GPS로 타일 칸과 조위 관측소를 고른다. HTTP는 백그라운드 fetch만."""
+        from eclipse_pkg.tide_plan import pick_station_sticky
         lat = msg.latitude
         lon = msg.longitude
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             return
         self._current_lat = lat
         self._current_lon = lon
+        self._refresh_waterline_tile()
+        self._refresh_keepout_tile()
         if not self.get_parameter('enable_gps_station_select').value:
             return
-        nearest = find_nearest_station(lat, lon)
-        if nearest and nearest['code'] != self._current_station_code:
-            self._current_station_code = nearest['code']
-            self.get_logger().info(
-                f'GPS 기반 관측소 변경: {self._current_station_code} '
-                f'({nearest["name"]}, {nearest["distance_m"]}m)'
-            )
-            with self._cache_lock:
-                self.ops_config['station_code'] = nearest['code']
-            self._start_refresh(datetime.now())
-        self._refresh_keepout_tile()
+        picked = pick_station_sticky(lat, lon, self._current_station_code)
+        if picked is None:
+            return
+        self._station_name = picked.get('name') or ''
+        self._station_distance_m = picked.get('distance_m')
+        if not picked.get('switched'):
+            return
+        self._current_station_code = picked['code']
+        with self._cache_lock:
+            self.ops_config['station_code'] = picked['code']
+        self.get_logger().info(
+            f'GPS 기반 관측소 변경: {self._current_station_code} '
+            f'({picked["name"]}, {picked["distance_m"]}m)'
+        )
+        self._start_station_refresh(datetime.now())
 
     def _home_pose_callback(self, msg):
         """gps_health_supervisor 가 잡은 gps_home."""
@@ -730,8 +749,58 @@ class TideWatchNode(Node):
         """TideLayer 입력은 수위선, 칸 밖이면 keepout 타일."""
         del now
 
+    def _load_named_keepout_and_steps(self):
+        """keepout_site 또는 명시 경로가 있을 때만 named 파일을 연다."""
+        site = normalize_keepout_site(self.get_parameter('keepout_site').value)
+        keepout_path = resolve_keepout_geojson_path(
+            str(self.get_parameter('keepout_geojson').value or ''),
+            site=site)
+        if keepout_path:
+            try:
+                self._baked_rings_5186 = filter_keepout_rings(
+                    load_keepout_geojson(keepout_path))
+                self.get_logger().info(
+                    f'구운 keepout: {len(self._baked_rings_5186)} rings '
+                    f'({keepout_path})')
+            except (OSError, ValueError, TypeError) as exc:
+                self.get_logger().error(f'keepout geojson 로드 실패: {exc}')
+        else:
+            self.get_logger().warn('keepout_geojson 없음 — 해측 띠는 라이브/빈 값')
+        steps_path = resolve_waterline_steps_path(
+            str(self.get_parameter('waterline_steps_json').value or ''),
+            site=site)
+        if steps_path:
+            try:
+                self._wl_steps = load_waterline_steps(steps_path)
+                self.get_logger().info(
+                    f'수위선 스텝 {len(self._wl_steps)}개 ({steps_path})')
+            except (OSError, ValueError, TypeError) as exc:
+                self.get_logger().error(f'수위선 스텝 로드 실패: {exc}')
+        else:
+            self.get_logger().warn(
+                'waterline steps 없음 — 수위선 마커는 비움. '
+                'scripts/bake_tide_waterline.py 로 구워라')
+
+    def _recompute_grow_m(self):
+        """로드된 keepout 링으로 grow_m을 다시 계산한다."""
+        origin, radius = window_from_rings(
+            self._baked_rings_5186, self._fallback_grow)
+        coast_for_span = []
+        self._mud_for_grow = list(self._mudflat_polys)
+        if origin is not None and radius is not None:
+            if self._coastline:
+                coast_for_span = clip_geoms_to_window(
+                    self._coastline, origin, radius)
+            if self._mudflat_polys:
+                self._mud_for_grow = clip_geoms_to_window(
+                    self._mudflat_polys, origin, radius)
+        self._coast_for_front = coast_for_span
+        self._grow_m = keepout_grow_span_m(
+            self._baked_rings_5186, coast_for_span,
+            fallback_m=self._fallback_grow)
+
     def _load_waterline_tiles(self):
-        """구운 타일 인덱스가 있으면 GPS로 칸을 고른다. 없으면 한 장 모드."""
+        """구운 타일 인덱스. GPS가 칸을 고른다. named 한 장으로 폴백하지 않는다."""
         tiles_dir = str(
             self.get_parameter('waterline_tiles_dir').value or '').strip()
         if not tiles_dir:
@@ -740,23 +809,31 @@ class TideWatchNode(Node):
         try:
             tiles = load_tile_index(index_path)
         except (OSError, ValueError, TypeError) as exc:
-            self.get_logger().warn(f'수위선 타일 인덱스 실패 — 한 장 유지: {exc}')
+            self.get_logger().warn(
+                f'수위선 타일 인덱스 실패 — 마커 비움: {exc}')
+            self._wl_tiles_dir = tiles_dir
+            self._wl_tiles = []
+            self._wl_steps = []
             return
         ready = baked_tiles(tiles, tiles_dir)
-        if not ready:
-            self.get_logger().warn(
-                f'구운 수위선 타일 없음 ({tiles_dir}) — 한 장 유지')
-            return
         self._wl_tiles_dir = tiles_dir
         self._wl_tiles = ready
         self._wl_steps = []
         self._wl_tile_id = None
+        self._wl_tile = None
+        self._wl_neighbor_packs = []
         self._wl_alpha_key = None
+        if not ready:
+            self.get_logger().warn(
+                f'구운 수위선 타일 없음 ({tiles_dir}) — 마커 비움')
+            return
         self.get_logger().info(
             f'수위선 타일 {len(ready)}/{len(tiles)} 구움 ({tiles_dir})')
 
     def _refresh_waterline_tile(self):
         """GPS 칸이 바뀌면 steps JSON 을 갈아끼운다. 파일 I/O 는 여기만."""
+        if self._map_source == 'forced_site':
+            return
         if not self._wl_tiles or self._gps_to_5186 is None:
             return
         if self._current_lat is None or self._current_lon is None:
@@ -767,31 +844,100 @@ class TideWatchNode(Node):
         except Exception as exc:
             self.get_logger().debug(f'타일 좌표 변환 실패: {exc}')
             return
-        tile = lookup_tile_sticky(
-            self._wl_tiles, east, north, self._wl_tile_id)
-        if tile is None:
+        picked = pick_baked_tile_path(
+            self._wl_tiles, self._wl_tiles_dir, east, north,
+            self._wl_tile_id, kind='waterline')
+        if picked['reason'] != 'ok':
             if self._wl_tile_id is not None or self._wl_steps:
                 self.get_logger().warn(
-                    '수위선 타일 밖 — TideLayer 마커 비움')
+                    f'수위선 타일 없음 ({picked["reason"]}) — 마커 비움')
                 self._wl_tile_id = None
+                self._wl_tile = None
+                self._wl_neighbor_packs = []
                 self._wl_steps = []
                 self._wl_alpha_key = None
             return
-        if tile.get('id') == self._wl_tile_id and self._wl_steps:
+        if picked['id'] == self._wl_tile_id and self._wl_steps:
             return
-        path = tile_steps_path(self._wl_tiles_dir, tile.get('id'))
         try:
-            self._wl_steps = load_waterline_steps(path)
+            self._wl_steps = load_waterline_steps(picked['path'])
         except (OSError, ValueError, TypeError) as exc:
-            self.get_logger().error(f'수위선 타일 로드 실패 {path}: {exc}')
+            self.get_logger().error(
+                f'수위선 타일 로드 실패 {picked["path"]}: {exc}')
             return
-        self._wl_tile_id = tile.get('id')
+        self._wl_tile_id = picked['id']
+        self._wl_tile = tile_by_id(self._wl_tiles, picked['id'])
+        self._wl_neighbor_packs = self._load_neighbor_waterline_packs(
+            picked['id'])
         self._wl_alpha_key = None
         self.get_logger().info(
-            f'수위선 타일 {self._wl_tile_id} steps={len(self._wl_steps)}')
+            f'수위선 타일 {self._wl_tile_id} steps={len(self._wl_steps)} '
+            f'neighbors={len(self._wl_neighbor_packs)}')
+
+    def _load_neighbor_waterline_packs(self, tile_id_val):
+        """현재 칸 이웃 JSON. 칸이 바뀔 때만."""
+        packs = []
+        for rec in neighbor_tile_records(self._wl_tiles, tile_id_val, ring=1):
+            path = tile_steps_path(self._wl_tiles_dir, rec.get('id'))
+            if not path:
+                continue
+            try:
+                steps = load_waterline_steps(path)
+            except (OSError, ValueError, TypeError):
+                continue
+            packs.append((rec, steps))
+        return packs
+
+    def _display_waterline_rings(self, alpha, east=None, north=None):
+        """구운 링 + 창 변 제거 + (만조) 해안 복도."""
+        rings = waterline_rings_at_alpha(self._wl_steps, alpha)
+        tile = self._wl_tile
+        near_edge = bool(
+            tile is not None and east is not None and north is not None
+            and pin_near_tile_edge(east, north, tile, 4000.0))
+        packed = [(tile, rings)]
+        if near_edge:
+            for rec, steps in self._wl_neighbor_packs:
+                packed.append(
+                    (rec, waterline_rings_at_alpha(steps, alpha)))
+        merged = []
+        do_stitch = float(alpha) >= 0.6
+        for rec, raw in packed:
+            aabb = rec if rec else None
+            merged.extend(cleanup_waterline_rings(
+                raw, aabb=aabb, pad_m=WINDOW_BORDER_PAD_M,
+                join_m=WATERLINE_STITCH_M, stitch=False))
+        if do_stitch:
+            merged = cleanup_waterline_rings(
+                merged, aabb=None, stitch=True, join_m=WATERLINE_STITCH_M)
+        if (
+            float(alpha) >= 0.99
+            and self._coastline
+            and (self._mud_for_grow or self._mudflat_polys)
+        ):
+            origin = None
+            if east is not None and north is not None:
+                origin = (east, north)
+            radius = 9000.0
+            if tile is not None:
+                try:
+                    radius = float(tile.get('window_m') or radius)
+                except (TypeError, ValueError):
+                    pass
+            coast_w = self._coastline
+            mud_src = self._mud_for_grow or self._mudflat_polys
+            mud_w = mud_src
+            if origin is not None:
+                coast_w = clip_geoms_to_window(
+                    self._coastline, origin, radius)
+                mud_w = clip_geoms_to_window(mud_src, origin, radius)
+            rebuilt = coast_along_mud_rings(coast_w, mud_w)
+            if rebuilt:
+                return rebuilt
+        return merged
 
     def _load_keepout_tiles(self):
-        """구운 keepout 칸 인덱스. GPS가 1칸만 로드한다."""
+        """구운 keepout 칸 인덱스. GPS가 1칸만 로드. named 폴백 없음."""
         tiles_dir = str(
             self.get_parameter('keepout_tiles_dir').value or '').strip()
         if not tiles_dir:
@@ -800,21 +946,26 @@ class TideWatchNode(Node):
         try:
             tiles = load_tile_index(index_path)
         except (OSError, ValueError, TypeError) as exc:
-            self.get_logger().warn(f'keepout 타일 인덱스 실패 — 한 장 유지: {exc}')
+            self.get_logger().warn(
+                f'keepout 타일 인덱스 실패 — 띠 비움: {exc}')
+            self._ko_tiles_dir = tiles_dir
+            self._ko_tiles = []
             return
         ready = baked_keepout_tiles(tiles, tiles_dir)
-        if not ready:
-            self.get_logger().warn(
-                f'구운 keepout 타일 없음 ({tiles_dir}) — 한 장 유지')
-            return
         self._ko_tiles_dir = tiles_dir
         self._ko_tiles = ready
         self._ko_tile_id = None
+        if not ready:
+            self.get_logger().warn(
+                f'구운 keepout 타일 없음 ({tiles_dir}) — 띠 비움')
+            return
         self.get_logger().info(
             f'keepout 타일 {len(ready)}/{len(tiles)} 구움 ({tiles_dir})')
 
     def _refresh_keepout_tile(self):
         """GPS 칸이 바뀌면 keepout.geojson 을 갈아끼운다."""
+        if self._map_source == 'forced_site':
+            return
         if not self._ko_tiles or self._gps_to_5186 is None:
             return
         if self._current_lat is None or self._current_lon is None:
@@ -825,30 +976,35 @@ class TideWatchNode(Node):
         except Exception as exc:
             self.get_logger().debug(f'keepout 타일 좌표 변환 실패: {exc}')
             return
-        tile = lookup_tile_sticky(
-            self._ko_tiles, east, north, self._ko_tile_id)
-        if tile is None:
-            if self._ko_tile_id is not None:
-                self.get_logger().warn('keepout 타일 밖 — 구운 띠 비움')
+        picked = pick_baked_tile_path(
+            self._ko_tiles, self._ko_tiles_dir, east, north,
+            self._ko_tile_id, kind='keepout')
+        if picked['reason'] != 'ok':
+            if self._ko_tile_id is not None or self._baked_rings_5186:
+                self.get_logger().warn(
+                    f'keepout 타일 없음 ({picked["reason"]}) — 구운 띠 비움')
                 self._ko_tile_id = None
                 self._baked_rings_5186 = []
+                self._recompute_grow_m()
             return
-        if tile.get('id') == self._ko_tile_id and self._baked_rings_5186:
+        if picked['id'] == self._ko_tile_id and self._baked_rings_5186:
             return
-        path = tile_keepout_path(self._ko_tiles_dir, tile.get('id'))
         try:
             self._baked_rings_5186 = filter_keepout_rings(
-                load_keepout_geojson(path))
+                load_keepout_geojson(picked['path']))
         except (OSError, ValueError, TypeError) as exc:
-            self.get_logger().error(f'keepout 타일 로드 실패 {path}: {exc}')
+            self.get_logger().error(
+                f'keepout 타일 로드 실패 {picked["path"]}: {exc}')
             return
-        self._ko_tile_id = tile.get('id')
+        self._ko_tile_id = picked['id']
+        self._recompute_grow_m()
         self.get_logger().info(
             f'keepout 타일 {self._ko_tile_id} rings={len(self._baked_rings_5186)}')
 
     def _publish_grown_waterline(self):
         """구운 수위선을 α 로 골라 마커·TideLayer 에 넣는다."""
         self._refresh_waterline_tile()
+        self._refresh_keepout_tile()
         empty = ()
         if not self._wl_steps:
             self._waterline_ring_count = 0
@@ -908,8 +1064,8 @@ class TideWatchNode(Node):
             alpha = 0.0
         key = round(max(0.0, min(1.0, alpha)), 2)
         if key != self._wl_alpha_key:
-            self._wl_rings_5186 = waterline_rings_at_alpha(
-                self._wl_steps, key)
+            self._wl_rings_5186 = self._display_waterline_rings(
+                key, pin_x, pin_y)
             self._wl_alpha_key = key
             self.get_logger().info(
                 f'수위선 파일 α={key:.2f} '
@@ -1111,6 +1267,8 @@ class TideWatchNode(Node):
             'clock_offset_hours': offset_h,
             'clock_speed': clock_speed,
             'station_code': self._current_station_code,
+            'station_name': self._station_name,
+            'station_distance_m': self._station_distance_m,
             'tide_level_m': interp.get('tide_level_m'),
             't_low': interp.get('t_low'),
             't_high': interp.get('t_high'),

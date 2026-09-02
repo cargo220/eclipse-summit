@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'urdf'), glob('urdf/*.urdf')),
+        (os.path.join('share', package_name, 'bt_trees'), glob('bt_trees/*.xml')),
         (os.path.join('share', package_name, 'config'),
          glob('config/*.yaml') + glob('config/*.geojson')
          + glob('config/*.json')),
@@ -37,6 +38,7 @@ setup(
             'tide_watch_node = eclipse_pkg.tide_watch_node:main',
             'tide_patrol_node = eclipse_pkg.tide_patrol_node:main',
             'probe_sensor = eclipse_pkg.probe_sensor:main',
+            'pointcloud_filter_node = eclipse_pkg.pointcloud_filter_node:main',
         ],
     },
 )

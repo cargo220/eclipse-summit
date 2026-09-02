@@ -54,8 +54,14 @@ def build_toll_request(goal_pose):
 def geodetic_roundtrip_error(origin_point, roundtrip_point):
     """Planar map error after a map -> lat/lon -> map conversion.
 
-    A large error means navsat_transform's datum no longer matches the map
-    the click was made in.
+    Structure borrowed from the collaborator's workspace (~/ewooni_docker_4),
+    where every goal had to pass a ToLL -> FromLL round-trip check. Here the
+    same idea comes for free on the /clicked_point path: the click already
+    gives us a map point, so converting it out to lat/lon and back and
+    comparing tells us whether the geodetic datum currently agrees with the
+    map frame. A large error means navsat_transform's datum has drifted away
+    from the map the operator is clicking on, so the lat/lon we would act on
+    is not the place that was clicked.
     """
     return math.hypot(
         float(roundtrip_point.x) - float(origin_point.x),
@@ -134,7 +140,10 @@ class GpsWaypointCommander(Node):
             self.cancel_navigation_callback,
         )
 
-        # Foxglove /goal_pose는 map 로컬 좌표. /fromLL은 위경도를 같은 경로로 보낸다.
+        # 2026-08-09: Foxglove 3D 패널 클릭(/goal_pose)은 로봇의 map 프레임
+        # 로컬 좌표(미터)일 뿐 실제 위경도와 무관하다. 이 서비스는
+        # robot_localization의 /fromLL(GPS 융합과 동일한 datum/UTM 변환)로
+        # 실제 위경도를 map 프레임으로 바꿔 같은 네비게이션 경로로 보낸다.
         self.fromll_client = self.create_client(FromLL, '/fromLL')
         self.gps_goal_service = self.create_service(
             GpsGoal,
@@ -156,8 +165,14 @@ class GpsWaypointCommander(Node):
             GeoPoint, '/goal_pose/latlon', goal_latlon_qos
         )
 
-        # /clicked_point는 /toLL -> /fromLL 왕복으로 위경도 목표가 된다.
-        # 왕복 오차는 map과 위경도가 맞는지 검사한다.
+        # Foxglove 3D 패널의 "점 찍기" 도구(/clicked_point)를 위경도 목표 경로로
+        # 보낸다. 이 토픽은 tars_autonomy.launch.py 의 foxglove_bridge
+        # client_topic_whitelist 에 들어 있어 Foxglove 가 발행할 수 있었지만,
+        # 2026-08-12 이전에는 구독자가 하나도 없어 클릭해도 아무 일이 없었다.
+        # /goal_pose 처럼 map 좌표를 바로 쓰지 않고 /toLL -> /fromLL 을 왕복시키는
+        # 이유는 두 가지다: (1) 목표가 map 로컬 좌표가 아니라 실제 위경도로
+        # 표현되어 datum 이 바뀌어도 같은 땅을 가리키고, (2) 왕복 오차가 곧
+        # "지금 이 map 프레임이 위경도와 일치하는가"의 검사가 된다.
         # 조정가능 — 왕복 허용 오차(m).
         self.declare_parameter('clicked_point_roundtrip_max_error_m', 1.0)
         self._roundtrip_max_error_m = float(
@@ -285,6 +300,12 @@ class GpsWaypointCommander(Node):
         return True
 
     def gps_goal_callback(self, request, response):
+        # 2026-08-09 Lee 승인: 필드 테스트 중 RTK Fixed가 잡히지 않아
+        # (DGNSS, hacc 수 m) 위경도 목표 경로만 한시적으로 GPS_MIN_GOOD_FIX_STATUS
+        # (RTK Float/DGNSS 이상)까지 완화한다. /goal_pose(Foxglove 클릭) 경로는
+        # 기존 GPS_MIN_NAV_START_FIX_STATUS(RTK Fixed) 그대로 유지된다.
+        # 이 상태에서는 map 원점이 수 m 단위로 틀어질 수 있어 위치 정확도가
+        # 떨어진다는 점을 감수한 임시 완화다.
         if not gps_fix_ready_for_navigation(
             self._gps_fix_status, GPS_MIN_GOOD_FIX_STATUS
         ):

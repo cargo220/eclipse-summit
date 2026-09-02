@@ -1,6 +1,7 @@
 #include "tars_tide_layer/tide_layer.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include "pluginlib/class_list_macros.hpp"
@@ -135,7 +136,7 @@ void TideLayer::updateRingsCache(std::vector<Ring> incoming)
 }
 
 void TideLayer::updateBounds(
-  double /*robot_x*/, double /*robot_y*/, double /*robot_yaw*/,
+  double robot_x, double robot_y, double /*robot_yaw*/,
   double * min_x, double * min_y,
   double * max_x, double * max_y)
 {
@@ -144,38 +145,9 @@ void TideLayer::updateBounds(
   if (!enabled_) {
     return;
   }
-
-  auto * cmap = layered_costmap_->getCostmap();
-  if (!cmap) {
-    return;
-  }
-  const double wx0 = cmap->getOriginX();
-  const double wy0 = cmap->getOriginY();
-  const double wx1 = wx0 + cmap->getSizeInMetersX();
-  const double wy1 = wy0 + cmap->getSizeInMetersY();
-
-  bool touched = false;
-  if (polygon_active_) {
-    for (const auto & ring : polygons_cache_) {
-      touched = touch_ring_in_window(
-          ring, wx0, wy0, wx1, wy1, polygon_margin_m_,
-          min_x, min_y, max_x, max_y) ||
-        touched;
-    }
-  }
-  if (!last_clear_polygons_.empty()) {
-    for (const auto & ring : last_clear_polygons_) {
-      touched = touch_ring_in_window(
-          ring, wx0, wy0, wx1, wy1, polygon_margin_m_,
-          min_x, min_y, max_x, max_y) ||
-        touched;
-    }
-  }
-  if (touched) {
-    *min_x -= polygon_margin_m_;
-    *min_y -= polygon_margin_m_;
-    *max_x += polygon_margin_m_;
-    *max_y += polygon_margin_m_;
+  // 수위선으로 공유 창을 키우지 않는다. inflation이 맵 전체를 돌지 않게.
+  if (!painted_ && polygon_active_) {
+    touch(robot_x, robot_y, min_x, min_y, max_x, max_y);
   }
 }
 
@@ -223,21 +195,48 @@ void TideLayer::updateCosts(
     return;
   }
 
-  origin_x_ = layered_costmap_->getCostmap()->getOriginX();
-  origin_y_ = layered_costmap_->getCostmap()->getOriginY();
-  size_x_ = layered_costmap_->getCostmap()->getSizeInCellsX();
-  size_y_ = layered_costmap_->getCostmap()->getSizeInCellsY();
-  resolution_ = layered_costmap_->getCostmap()->getResolution();
+  auto * cmap = layered_costmap_->getCostmap();
+  if (!cmap) {
+    current_ = true;
+    return;
+  }
+  const double new_ox = cmap->getOriginX();
+  const double new_oy = cmap->getOriginY();
+  const unsigned int new_sx = cmap->getSizeInCellsX();
+  const unsigned int new_sy = cmap->getSizeInCellsY();
+  const double new_res = cmap->getResolution();
+  const bool origin_moved =
+    std::hypot(origin_x_ - new_ox, origin_y_ - new_oy) > 0.5 * new_res;
+  const bool size_changed = (size_x_ != new_sx) || (size_y_ != new_sy) ||
+    (std::fabs(resolution_ - new_res) > 1e-9);
+  origin_x_ = new_ox;
+  origin_y_ = new_oy;
+  size_x_ = new_sx;
+  size_y_ = new_sy;
+  resolution_ = new_res;
 
-  const int width = max_i - min_i;
-  const int height = max_j - min_j;
-  if (width <= 0 || height <= 0) {
+  (void)min_i;
+  (void)min_j;
+  (void)max_i;
+  (void)max_j;
+
+  const bool restamp = should_restamp_tide(
+    need_clear_ || !last_clear_polygons_.empty(),
+    origin_moved, size_changed, painted_);
+  if (!restamp) {
+    current_ = true;
+    return;
+  }
+
+  const int full_i1 = static_cast<int>(size_x_);
+  const int full_j1 = static_cast<int>(size_y_);
+  if (full_i1 <= 0 || full_j1 <= 0) {
     current_ = true;
     return;
   }
 
   unsigned char * master_array = master_grid.getCharMap();
-  const size_t n_cells = static_cast<size_t>(width) * static_cast<size_t>(height);
+  const size_t n_cells = static_cast<size_t>(full_i1) * static_cast<size_t>(full_j1);
 
   std::vector<uint8_t> curr_mask;
   std::vector<int> curr_cells;
@@ -245,7 +244,7 @@ void TideLayer::updateCosts(
     curr_mask.assign(n_cells, 0);
     curr_cells.reserve(4096);
     stampRings(
-      polygons_cache_, min_i, min_j, max_i, max_j, curr_mask, curr_cells);
+      polygons_cache_, 0, 0, full_i1, full_j1, curr_mask, curr_cells);
   }
 
   if (!last_clear_polygons_.empty()) {
@@ -253,13 +252,13 @@ void TideLayer::updateCosts(
     std::vector<int> prev_cells;
     prev_cells.reserve(4096);
     stampRings(
-      last_clear_polygons_, min_i, min_j, max_i, max_j, prev_mask, prev_cells);
+      last_clear_polygons_, 0, 0, full_i1, full_j1, prev_mask, prev_cells);
     for (int k : prev_cells) {
       if (!curr_mask.empty() && curr_mask[static_cast<size_t>(k)] != 0) {
         continue;
       }
-      const int i = min_i + (k % width);
-      const int j = min_j + (k / width);
+      const int i = k % full_i1;
+      const int j = k / full_i1;
       master_array[master_grid.getIndex(i, j)] = nav2_costmap_2d::FREE_SPACE;
     }
     last_clear_polygons_.clear();
@@ -269,18 +268,19 @@ void TideLayer::updateCosts(
 
   if (!curr_cells.empty()) {
     for (int k : curr_cells) {
-      const int i = min_i + (k % width);
-      const int j = min_j + (k / width);
+      const int i = k % full_i1;
+      const int j = k / full_i1;
       master_array[master_grid.getIndex(i, j)] =
         nav2_costmap_2d::LETHAL_OBSTACLE;
     }
   }
 
+  painted_ = true;
   RCLCPP_INFO_THROTTLE(
     logger_, *clock_, 10000,
-    "TideLayer paint rings=%zu cells=%zu margin=%.1fm window=%dx%d",
+    "TideLayer paint rings=%zu cells=%zu margin=%.1fm grid=%dx%d",
     polygons_cache_.size(), curr_cells.size(), polygon_margin_m_,
-    width, height);
+    full_i1, full_j1);
 
   current_ = true;
 }
@@ -288,12 +288,10 @@ void TideLayer::updateCosts(
 void TideLayer::reset()
 {
   std::lock_guard<std::mutex> lock(polygon_mutex_);
-  polygons_cache_.clear();
-  polygon_boxes_.clear();
   last_clear_polygons_.clear();
   last_clear_boxes_.clear();
-  polygon_active_ = false;
   need_clear_ = false;
+  painted_ = false;
   current_ = false;
 }
 

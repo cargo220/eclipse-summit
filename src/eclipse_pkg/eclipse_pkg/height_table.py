@@ -3,8 +3,9 @@
 4-bar linkages on all four height motors have the same link lengths.
 Command ticks are identical on each axle (1=4, 11=14).
 
-ID 1/11 use stall-hold Present after a 10-16 tick return.
-Piecewise sag, constant outside that range. Pair copy 4<-1, 14<-11.
+2026-08-22: ID 1/11 shifted to stall-hold Present after the 10-16 tick
+return (2.0 s inhibit holds at 42/45/63/66 mm). Piecewise sag, constant
+outside that range. Pair copy 4<-1, 14<-11. Excel Delta-theta shape kept.
 
 Front (1/4): ticks decrease with down_mm. Window 2069-3289.
 Rear (11/14): ticks increase with down_mm. Window 824-1810.
@@ -12,6 +13,9 @@ Rear (11/14): ticks increase with down_mm. Window 824-1810.
 
 Rows are (down_mm, id1, id4, id11, id14).
 """
+
+# Hold Present minus old table. 0.7 s cut at 48 mm is not used.
+# 42: +13/-10  45: +14/-10  63: +55/-43  66: +56/-42
 
 # (down_mm, id1, id4, id11, id14)
 HEIGHT_POSITION_TABLE = (

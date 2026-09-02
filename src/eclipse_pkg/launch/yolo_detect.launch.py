@@ -292,6 +292,24 @@ def generate_launch_description():
             ),
         ),
         DeclareLaunchArgument(
+            'enable_survey',
+            default_value='false',
+            description=(
+                'Reserved. Survey logger is not in this tree; the flag is '
+                'accepted so run_jetson_autonomy.sh does not fail launch.'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'survey_output_dir',
+            default_value='/tars_logs/survey',
+            description='Reserved survey output dir (unused unless survey node is added).',
+        ),
+        DeclareLaunchArgument(
+            'survey_cell_m',
+            default_value='5.0',
+            description='Reserved survey cell size (unused unless survey node is added).',
+        ),
+        DeclareLaunchArgument(
             'enable_3d',
             default_value='true',
             description='Start yolo_3d_node (aligned depth → Detection3DArray).',

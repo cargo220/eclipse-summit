@@ -15,10 +15,10 @@ DRIVE_STATE_TURNING = 'TURNING'  # 조향 입력이 큰 회전 상태
 
 @dataclass(frozen=True)
 class DriveControlConfig:
-    # 조정가능 — 수동/상한 속도·가감속
+    # 조정가능 — 수동/상한 속도·가감속 (tars_tuning.yaml § speeds / velocity_smoother)
     # 선가속/감속은 수동이 자율 smoother(0.30/0.40)보다 보수적(0.10/0.25).
     # 각가속은 smoother wz 축(0.7)과 맞춤 (예전 1.0은 갯벌에 여유 과다).
-    max_linear_speeds: tuple[float, ...] = (PLATFORM_MAX_LINEAR_MPS,)  # 조정가능: 최대 선속도(m/s). D250·G2.5·모터 130 tick
+    max_linear_speeds: tuple[float, ...] = (PLATFORM_MAX_LINEAR_MPS,)  # 조정가능: 최대 선속도(m/s). D250·G=2·모터 130 tick
     max_angular_speed: float = 0.6  # 조정가능: 최대 각속도(rad/s)
     max_linear_accel: float = 0.10  # 조정가능: 선가속 상한 (m/s²)
     max_linear_decel: float = 0.25  # 조정가능: 선감속 상한 (m/s²)
@@ -95,8 +95,8 @@ def scale_to_wheel_limit(
     chase each other. Scaling both wheels by the same factor keeps the ratio,
     so the arc is preserved and only the speed along it drops.
 
-    This matters at ordinary speeds, not just extreme ones: with a ~0.9742 m/s
-    wheel limit, commanding 0.97 m/s along a gentle 2 m-radius curve already
+    This matters at ordinary speeds, not just extreme ones: with a ~0.7794 m/s
+    wheel limit, commanding 0.78 m/s along a gentle 2 m-radius curve already
     asks the outer wheel past the limit. Nav2's regulated pure pursuit only
     slows for curves tighter than regulated_linear_scaling_min_radius (0.9 m),
     so the gentle-curve case is exactly the one nothing else guards.

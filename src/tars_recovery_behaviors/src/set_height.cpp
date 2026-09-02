@@ -1,7 +1,10 @@
 // TARS mudflat recovery behaviors.
 //
-// SetHeight — /drive/height_step_mm 발행 후 set_height.wait_duration 동안 대기.
-// 높이 도달 확인은 하지 않는다.
+// SetHeight — publishes a target probe/actuator height to /drive/height_step_mm
+// at the start of a recovery episode, then waits a fixed duration. Same
+// skeleton as MudAssess (TimedBehavior<nav2_msgs::action::Wait>). The wait
+// duration is read from the set_height.wait_duration parameter and the countdown
+// simply runs until it elapses; no height-arrival confirmation is performed.
 
 #include "tars_recovery_behaviors/set_height.hpp"
 
@@ -17,7 +20,8 @@ void SetHeight::onConfigure()
     return;
   }
 
-  // 파라미터는 behavior_server 네임스페이스. set_height. 접두사.
+  // Parameters live in the behavior_server node namespace (this plugin does
+  // not own a node), so names carry the "set_height." plugin prefix.
   nav2_util::declare_parameter_if_not_declared(
     node, "set_height.target_height_mm", rclcpp::ParameterValue(30.0));
   nav2_util::declare_parameter_if_not_declared(

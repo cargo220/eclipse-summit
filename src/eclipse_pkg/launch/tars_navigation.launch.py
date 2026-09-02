@@ -1,7 +1,12 @@
-# Local fork of nav2_bringup/launch/navigation_launch.py (Humble).
-# waypoint_follower is dropped (unused; see lifecycle_nodes below).
-# Re-diff against /opt/ros/humble/share/nav2_bringup/launch/navigation_launch.py
-# after a Nav2 upgrade.
+# TARS LOCAL FORK of nav2_bringup/launch/navigation_launch.py (ROS 2 Humble).
+#
+# Why a fork: nav2_bringup offers no launch argument to skip individual
+# servers, and we need waypoint_follower gone (see the lifecycle_nodes comment
+# below). Everything else is byte-identical to the upstream file.
+#
+# MAINTENANCE: re-diff against
+#   /opt/ros/humble/share/nav2_bringup/launch/navigation_launch.py
+# after any Nav2 upgrade, or this fork will silently miss upstream fixes.
 #
 # Copyright (c) 2018 Intel Corporation
 #
@@ -45,8 +50,12 @@ def generate_launch_description():
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
 
-    # waypoint_follower 제거. /follow_waypoints 호출이 없고 NavigateToPose만 쓴다.
-    # 목록과 Node/ComposableNode 정의에서 같이 빼야 한다. 목록만 빼면 미구성 프로세스가 남는다.
+    # TARS fork: waypoint_follower removed (2026-08-11). Nothing in this
+    # project ever calls /follow_waypoints — gps_waypoint_commander sends
+    # NavigateToPose goals directly — so the node only cost a process and a
+    # DDS participant. It must be dropped from BOTH this list and the Node /
+    # ComposableNode definitions below: removing it from the list alone would
+    # leave the process running unconfigured, which is worse than managed.
     lifecycle_nodes = ['controller_server',
                        'smoother_server',
                        'planner_server',
@@ -63,10 +72,19 @@ def generate_launch_description():
     remappings = [('/tf', 'tf'),
                   ('/tf_static', 'tf_static')]
 
-    # Create our own temporary YAML files that include substitutions
+    # Create our own temporary YAML files that include substitutions.
+    # BT trees are installed to share/eclipse_pkg/bt_trees so colcon install
+    # works without the /workspaces/eclipse-test-2 source mount.
+    eclipse_share = get_package_share_directory('eclipse_pkg')
     param_substitutions = {
         'use_sim_time': use_sim_time,
-        'autostart': autostart}
+        'autostart': autostart,
+        'default_nav_to_pose_bt_xml': os.path.join(
+            eclipse_share, 'bt_trees', 'tars_navigate_w_recovery.xml'),
+        'default_nav_through_poses_bt_xml': os.path.join(
+            eclipse_share, 'bt_trees',
+            'tars_navigate_through_poses_w_recovery.xml'),
+    }
 
     configured_params = ParameterFile(
         RewrittenYaml(
@@ -166,6 +184,7 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings),
+            # TARS fork: nav2_waypoint_follower Node removed here.
             Node(
                 package='nav2_velocity_smoother',
                 executable='velocity_smoother',
@@ -223,6 +242,7 @@ def generate_launch_description():
                 name='bt_navigator',
                 parameters=[configured_params],
                 remappings=remappings),
+            # TARS fork: nav2_waypoint_follower ComposableNode removed here.
             ComposableNode(
                 package='nav2_velocity_smoother',
                 plugin='nav2_velocity_smoother::VelocitySmoother',

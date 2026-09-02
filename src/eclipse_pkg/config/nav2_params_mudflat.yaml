@@ -1,4 +1,5 @@
 # TARS Nav2 Mapless Mudflat Configuration
+# Phase 2: GPS Waypoint Following + Rolling Costmaps + RPP Controller
 
 bt_navigator:
   ros__parameters:
@@ -12,13 +13,24 @@ bt_navigator:
     # 커스텀 recovery BT: 4분기에 Wait 5초. COSTMAP은 클리어 후 여전히 막히면
     # Spin 60°, STALL/SLIP은 BackUp 후진. UNKNOWN은 Wait만.
     default_nav_to_pose_bt_xml: /workspaces/eclipse-test-2/src/eclipse_pkg/bt_trees/tars_navigate_w_recovery.xml
-    # NavigateToPose만 쓰지만 bt_navigator는 through-poses 기본 BT도 사전 검증한다.
-    # stock 트리가 없는 플러그인을 참조하면 활성화가 실패하므로 커스텀 트리를 둔다.
-    # through-poses preload는 Wait만 부른다. Spin/BackUp은 to-pose 트리에만 있다.
+    # 이 프로젝트는 NavigateThroughPoses를 쓰지 않지만(gps_waypoint_commander.py는
+    # NavigateToPose만 사용), bt_navigator는 활성화 시 두 액션 타입의 기본 BT를 모두
+    # 사전 로드/검증한다. stock through-poses 트리가 없는 플러그인을 참조하면
+    # bt_navigator 활성화가 실패한다(2026-08-09). 커스텀 through-poses 트리로 대체.
+    # through-poses preload는 Wait를 server_name="wait"로만 부른다.
+    # Spin/BackUp은 to-pose 트리에만 있다.
     default_nav_through_poses_bt_xml: /workspaces/eclipse-test-2/src/eclipse_pkg/bt_trees/tars_navigate_through_poses_w_recovery.xml
-    # <StallDetector> 등 커스텀 태그는 plugin_lib_names에 명시한 라이브러리만 로드된다.
-    # 기본 목록을 유지한 채 tars_recovery_behaviors_plugin을 추가한다.
-    # .so가 LD_LIBRARY_PATH에 없으면 bt_navigator configure가 실패하고 Nav2 전체가 중단된다.
+    # Recovery 분기 설계 v1 (2026-08-10): 커스텀 BT가 <StallDetector> 태그를
+    # 사용하므로 이 라이브러리의 dlopen 로딩이 필수다. Humble의 bt_navigator는
+    # plugin_lib_names 파라미터에 명시된 라이브러리만 BT::Factory::registerFromPlugin으로
+    # 로드하며(ament 인덱스 자동 탐색 없음 — 설치 바이너리 실측), 파라미터 미설정 시
+    # 기본 목록이 적용된다. 아래는 그 기본 목록(설치된 libbt_navigator_core.so에서
+    # 추출, Humble 버전과 정확히 일치)에 우리 라이브러리를 추가한 것이다.
+    # 이 목록을 바꾸면 기본 목록도 반드시 함께 유지할 것(누락 시 해당 노드 사용 BT 실패).
+    # 배포 주의: 컨테이너가 tars_recovery_behaviors의 install을 source해서
+    # libtars_recovery_behaviors_plugin.so가 LD_LIBRARY_PATH에 있어야 한다.
+    # 그렇지 않으면 bt_navigator configure가 실패해 전체 Nav2 기동이 중단된다
+    # (2026-08-09 Spin/BackUp lifecycle 중단 사고와 같은 실패 모드).
     plugin_lib_names: ["nav2_assisted_teleop_action_bt_node",
                        "nav2_assisted_teleop_cancel_bt_node",
                        "nav2_back_up_action_bt_node",
@@ -84,7 +96,11 @@ planner_server:
 smoother_server:
   ros__parameters:
     use_sim_time: false
-    # SmoothPath를 쓰므로 Humble 기본값 대신 여기 값을 고정한다.
+    # 2026-08-11: smoother_server was already running (nav2_bringup launches it
+    # and lifecycle_manager manages it) but had NO block here, so it ran on
+    # Humble's built-in defaults — never reviewed for this robot. The BTs now
+    # actually call SmoothPath, so the config is pinned explicitly, same reason
+    # behavior_server's defaults were pinned below.
     smoother_plugins: ["simple_smoother"]
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"
@@ -99,7 +115,9 @@ controller_server:
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
-    # computeVelocityCommands 예외가 이 시간(초)을 넘기면 FollowPath abort.
+    # computeVelocityCommands 예외가 "마지막 성공 이후" 이 시간(초)을 넘기면
+    # FollowPath abort (Controller patience exceeded). 0.3은 collision/순간 TF 스파이크에
+    # 과민해서 2026-08-11에 2.0으로 완화 (progress 정체 15s·cmd_vel timeout 2s와 층 분리 유지).
     failure_tolerance: 2.0
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
@@ -107,33 +125,41 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      # 조정가능 — FollowPath 정체 → 복구 진입 조건
+      # 조정가능 — FollowPath 정체 → 복구 진입 조건 (tars_tuning.yaml § recovery_entry)
       required_movement_radius: 0.1  # 조정가능: 이 거리(m) 미만이면 "안 움직임"
       # 정체 감지: 0.1 m 미만 이동이 이 시간 지속되면 FollowPath FAILURE → 복구 분기.
+      # 2026-08-10: 30 s → 15 s (갯벌 스톨/막힘을 더 빨리 recovery로 넘김).
       movement_time_allowance: 15.0  # 조정가능: 정체 허용 시간(s)
 
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 1.0 # Mudflat GPS tolerance is relatively loose
-      yaw_goal_tolerance: 3.14 # 최종 yaw는 느슨하게 (갯벌 GPS 목표)
+      yaw_goal_tolerance: 3.14 # We don't care about final heading in mudflat, just getting there
 
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      # 조정가능 — 자율 선속도/곡선 추종
-      desired_linear_vel: 0.97 # 조정가능: 목표 선속도(m/s). 플랫폼 상한 ~0.9742 (D250·G2.5·130 tick)
+      # 조정가능 — 자율 선속도/곡선 추종 (tars_tuning.yaml § speeds / nav2)
+      desired_linear_vel: 0.779 # 조정가능: 목표 선속도(m/s). 플랫폼 상한 ~0.7794 (D250·G=2·130 tick)
       lookahead_dist: 2.5  # 조정가능
       min_lookahead_dist: 2.5  # 조정가능
       max_lookahead_dist: 4.0  # 조정가능
       lookahead_time: 3.0  # 조정가능
       rotate_to_heading_angular_vel: 0.5  # 조정가능: 제자리 회전 각속도(사용 시)
       # 조정가능 — 아래 velocity_smoother 의 max_accel[2] 와 반드시 같이 바꿀 것.
-      # Humble 기본 3.2면 smoother(0.7)보다 크게 잘린다.
+      # Humble 기본값은 3.2 라 명시하지 않으면 RPP 가 하류 smoother(0.7)보다 4.5배
+      # 큰 각가속을 명령하고 매 사이클 잘린다. 최종 명령은 smoother 가 내므로
+      # 기능상 위험하진 않지만, 값이 어긋나 있으면 "컨트롤러가 뭘 의도했는지"와
+      # "로봇이 뭘 받았는지"가 달라져 튜닝할 때 판단을 흐린다.
       max_angular_accel: 0.7
       transform_tolerance: 0.5
       use_velocity_scaled_lookahead_dist: true
+      # Skid-steering specific tuning
       use_regulated_linear_velocity_scaling: true
-      # 장애물: inflation 비용으로 감속, lethal이면 FollowPath 실패 → 복구.
+      # --- 장애물: 감속 후 정지 (2026-08-11) ---
+      # costmap inflation 비용이 올라가면 선속도를 서서히 낮춘 뒤, 아래 충돌 창에서
+      # lethal이면 compute 예외 → patience 후 FollowPath 실패 → RecoveryNode 복구.
+      # (오마킹 시 불필요 감속 가능 — 필드에서 gain/dist 재조정)
       use_cost_regulated_linear_velocity_scaling: true
       cost_scaling_dist: 1.0  # 조정가능
       cost_scaling_gain: 1.0  # 조정가능
@@ -141,7 +167,12 @@ controller_server:
       inflation_cost_scaling_factor: 3.0
       regulated_linear_scaling_min_radius: 0.9  # 조정가능
       regulated_linear_scaling_min_speed: 0.10  # 조정가능: 곡선 감속 하한(m/s)
-      # 충돌 검사 투영 시간(s). 거리 ≈ min(v * T, lookahead).
+      # 충돌 검사: 현재 명령 (v,w) 를 앞으로 최대 이 시간(초)만큼 투영하며
+      # footprint↔lethal 겹침을 본다. 앞보기 거리 ≈ min(v * T, lookahead).
+      # ※ 속도가 바뀌면 같은 T라도 미터 창이 바뀐다 (예: 0.22 m/s * 4 s ≈ 0.88 m
+      #    투영 + footprint 앞 ~0.4 m → 중심 기준 대략 1 m급; v↑ 이면 더 멀리 봄).
+      # 감속(cost scaling) 켜면 저속에서 T초 창의 미터 길이가 짧아지므로,
+      # 기본 1.0 s 대신 4.0 s 로 올려 "감지 가능한 구간에서 먼저 감속·검사" 하도록 함.
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_carrot: 4.0
       # 위치 추정 오차로 제자리 회전 모드에 고정되지 않도록 곡선 경로를 따른다.
@@ -153,17 +184,37 @@ local_costmap:
   local_costmap:
     ros__parameters:
       update_frequency: 5.0
-      # CostmapBlockedDetector는 /local_costmap/costmap을 KeepLast(1)로 구독한다.
+      # 2026-08-11: 0.5 -> 2.0 (Nav2 기본값). 이건 부하 절감이 아니라 기능 수정이다 —
+      # recovery 의 CostmapBlockedDetector 가 /local_costmap/costmap 을
+      # TRANSIENT_LOCAL KeepLast(1) 로 구독한다. 0.5Hz 면 COSTMAP 분기가 최대 2초 묵은
+      # 점유도로 판정하게 된다. always_send_full_costmap: false 와 겹치면 전체 맵
+      # 갱신이 더 드물어져 사실상 초기 맵으로 판정할 위험이 있다.
       publish_frequency: 2.0
-      # rolling_window에서 정지하면 origin이 고정되어 전체 OccupancyGrid가 멈춘다.
-      # 막힌 로봇이 바로 그 상태라, 전체 그리드를 계속 보내야 탐지기가 눈이 멀지 않는다.
+      # 2026-08-12: false -> true. 위 주석이 우려한 "사실상 초기 맵으로 판정"이 실차에서
+      # 그대로 재현됐다 — 목표 투입 시 CostmapBlockedDetector 가 age=66.38 (임계 2.0)로
+      # 실패하고 COSTMAP 분기가 UNKNOWN 으로 흘렀다. 원인: false 면 Costmap2DPublisher 가
+      # 전체 그리드를 "지오메트리/원점이 바뀔 때만" 재전송하고 평소엔 델타만 낸다.
+      # rolling_window 라 원점은 로봇을 따라가므로 정지한 로봇 = 고정 원점 = 전체 그리드
+      # 완전 정지다. 그런데 막힌 로봇은 정의상 정지 상태라, 탐지기는 자기가 필요한 바로
+      # 그 순간에 눈이 먼다. 실측: costmap_raw/costmap_updates 는 1.67Hz 로 멀쩡한데
+      # /local_costmap/costmap 만 0Hz. 비용은 100x100 셀 = 10KB x 1.67Hz ~= 17KB/s.
+      # global_costmap 은 그리드가 훨씬 커서 false 유지 (탐지기가 안 쓴다).
       always_send_full_costmap: true
       # EKF가 odom 없이 map->base_link을 직접 발행하는 단일 모드라
       # odom 프레임이 존재하지 않는다. map 기준으로 유지한다.
       global_frame: map
       robot_base_frame: base_link
       # (Nav2: obstacle/voxel layer는 이 값은 costmap 최상위 ros__parameters에서 읽음)
-      # 과다한 tolerance는 묵은 자세로 센서를 찍어 벽을 번지게 하고 TF 열화를 덮는다.
+      # 2026-08-12: 2.5 -> 0.5. 2.5 의 근거 두 개가 모두 소멸했다 — (1) "카메라 스탬프가
+      # TF보다 ~0.5s 뒤처져 MessageFilter 가 전부 드롭"은 odom->base_link 가 2.2Hz 이던
+      # 시절 증상이고 08-11 수정 후 8Hz 다, (2) CPU 과부하도 08-11 노드 감축으로
+      # load 5.74->2.64 로 해소됐다. 실측(08-12): /camera/points_filtered 의 stamp->수신
+      # 지연 평균 0.105~0.188s / **최대 0.360s**, MessageFilter 드롭 0건,
+      # extrapolation·transform 경고 0건. 0.5 는 실측 최대치의 약 1.4배 여유이며
+      # RPP 컨트롤러 플러그인이 이미 쓰는 값과 같다.
+      # 과다한 tolerance 는 그냥 낭비가 아니라 위험하다: costmap 이 최대 그만큼 묵은
+      # 자세로 센서를 배치하므로 자세가 흔들리는 동안 같은 벽이 여러 각도로 번져 찍히고,
+      # 동시에 TF 건강 악화를 조용히 덮어버린다(fail-dangerous).
       transform_tolerance: 0.5
       use_sim_time: false
       rolling_window: true
@@ -189,7 +240,7 @@ local_costmap:
         observation_sources: pointcloud
         pointcloud:
           topic: /camera/points_filtered
-          # 지면 노이즈 밴드(z -0.30~-0.10)를 걸러내는 하한. -0.20은 지면을 장애물로 찍는다.
+          # 지면 노이즈 밴드를 걸러내는 하한. 2026-08-07 실측 지면 밴드 z -0.30~-0.10(p50 -0.24)라 -0.10으로 상향 (기존 -0.20은 지면 마킹 유발).
           min_obstacle_height: -0.10
           max_obstacle_height: 2.0
           clearing: true
@@ -203,9 +254,26 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        # RPP는 로봇 셀 비용으로 감속한다. 풋프린트 내접 0.40 m에서 radius 0.50이면
-        # 그라디언트가 0.10 m뿐이라 충돌 검사(약 0.88 m)보다 먼저 감속하지 못한다.
-        # cost_scaling_dist 1.0 m와 맞춘다. 셀 크기(resolution)와는 무관하다.
+        # 2026-08-11: 0.30 → 0.50 — RPP cost 감속 구간·우회 여유 (lethal 정지 거리와는 별개)
+        # 2026-08-12: 0.50 → 1.00. 0.50 은 RPP 비용 감속을 사실상 무력화한다 —
+        # 이 풋프린트(0.8x0.8)의 내접 반경이 0.40 이라 그라디언트 구간이 겨우 0.10 m 였다:
+        #   d=0.40 cost 253(내접) / d=0.45 cost 217 / d=0.50 cost 187 / d>0.50 cost 0(절벽)
+        # 게다가 RPP 의 cost_scaling_dist 는 1.0 m 부터 감속하겠다는 설정인데 비용 정보가
+        # 0.50 m 까지밖에 없어 절반이 죽은 설정이었다. 결과: 실측(08-12 rosbag) linear.x 가
+        # 12초간 0.2200 에 고정됐다가 곧바로 0 으로 급정지 — 감속 없이 이진 차단만 걸렸다.
+        # (RPP 의 applyConstraints 는 "cost at this pose", 즉 **로봇 자신의 셀 비용**을 보므로
+        #  로봇이 인플레이션 안에 들어와야 감속이 시작된다. 반면 충돌 검사는
+        #  v * max_allowed_time_to_collision_up_to_carrot = 0.22*4.0 = 0.88 m 앞을 보니
+        #  0.88 > 0.50 이라 감속이 시작될 기회 자체가 없었다.)
+        # 1.00 은 cost_scaling_dist 와 정확히 일치시킨 값이다. 이제 감속이 0.88 m 이진 차단
+        # 보다 먼저 걸리고, 속도가 줄면 T초 창의 미터 길이도 함께 줄어 접근을 이어갈 수 있다
+        # — controller_server 쪽 max_allowed_time_to_collision_up_to_carrot 주석이 원래
+        # 의도한 동작이 비로소 성립한다.
+        # 2026-08-16: 0.30 → 1.00 복원. 08-15 핸드오프에서 의도된 "점 직경 축소"라는
+        # 이해로 1.00 → 0.30 하향했으나, inflation_radius 는 셀 크기인 resolution 과
+        # 무관한 "장애물 부풀림 반경"이다. 0.30 이면 08-12 실측 성과(RPP 감속 그라디언트
+        # 확보, linear.x 0.22 → 0.10 부드러운 감속)가 되돌아가 이진 차단만 남는다.
+        # 08-12 실측으로 검증된 1.00 복원 (근거: tars_history §15).
         inflation_radius: 1.00
 
 global_costmap:
@@ -213,16 +281,23 @@ global_costmap:
     ros__parameters:
       update_frequency: 1.0
       publish_frequency: 1.0
-      # 정지 시 updates만 오면 Foxglove 맵이 비다. 2000 m @ 0.4 m ≈ 25 MB (0.25 m는 한도 드롭).
+      # Foxglove OccupancyGrid는 정지 시 updates만 오면 빈 맵으로 남음.
+      # 이번만 4 km: 4000 m @ 0.8 m = 5000x5000 ≈ 25 MB.
+      # (2 km 는 2000 m @ 0.4 m, 같은 셀 수. 4 km 를 0.4 m 로 두면
+      #  10000x10000 ≈ 100 MB 라 Xavier Occupancy 발행이 안 끝난다.)
+      # (기본은 400 m @ 0.2 m.)
       always_send_full_costmap: true
       global_frame: map
       robot_base_frame: base_link
+      # 2026-08-12: 2.5 -> 0.5. 옛 근거("스탬프는 정상(p99 0.13s)이나 CPU 과부하로 costmap
+      # 배달 지연 ~1.6s", 2026-08-07 완화)는 08-11 노드 감축(load 5.74->2.64, 노드 34->29)
+      # 으로 소멸. 근거·실측은 local_costmap 쪽 주석 참조.
       transform_tolerance: 0.5
       use_sim_time: false
       rolling_window: true
-      width: 2000
-      height: 2000
-      resolution: 0.4
+      width: 4000
+      height: 4000
+      resolution: 0.8
       track_unknown_space: false
       footprint: "[ [0.4, 0.4], [0.4, -0.4], [-0.4, -0.4], [-0.4, 0.4] ]"
       plugins: ["tide_layer", "obstacle_layer", "inflation_layer"]
@@ -239,7 +314,7 @@ global_costmap:
         observation_sources: pointcloud
         pointcloud:
           topic: /camera/points_filtered
-          # local voxel_layer와 동일. -0.20은 지면을 장애물로 찍는다.
+          # local voxel_layer와 동일하게 2026-08-07 실측 지면 밴드(z -0.30~-0.10, p50 -0.24) 기준으로 -0.10 적용 (-0.20은 지면 마킹 유발).
           min_obstacle_height: -0.10
           max_obstacle_height: 2.0
           clearing: true
@@ -253,7 +328,12 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        # local(1.00)과 비대칭. 글로벌을 같이 넓히면 좁은 통로가 계획되지 않는다.
+        # 2026-08-11: local 과 동일 0.50 (장애물 우회·비용 쿠션)
+        # 2026-08-12: local 만 1.00 으로 올리고 여기는 0.50 유지 — 의도적 비대칭이다.
+        # local 인플레이션은 RPP 감속 그라디언트를 공급해야 해서 넓어야 하지만, global 을
+        # 같이 넓히면 플래너가 장애물에서 1 m 를 띄우느라 좁은 통로를 아예 계획하지 못한다
+        # (실내 시험에서 목표 도달 불가로 이어질 수 있다). 계획은 촘촘히, 주행은 조심히.
+        # 실지면 검증 후 global 도 올릴지 재검토할 것.
         inflation_radius: 0.50
 
 behavior_server:
@@ -264,6 +344,7 @@ behavior_server:
     cycle_frequency: 10.0
     # NavigateToPose 트리: wait + set_height + spin + backup.
     # Spin = COSTMAP 장애물에서 정지 후 60°. BackUp = STALL/SLIP 후진.
+    # mud_assess / drive_on_heading 은 이 목록에 없음.
     behavior_plugins: ["wait", "set_height", "spin", "backup"]
     wait:
       plugin: "nav2_behaviors/Wait"
@@ -274,29 +355,32 @@ behavior_server:
       enable: true
     spin:
       plugin: "nav2_behaviors/Spin"
-      # 조정가능 — COSTMAP 분기: wait+clear 후에도 막혀있을 때 회전
+      # 조정가능 — COSTMAP 분기 escalation: wait+clear 후에도 막혀있을 때 회전 (tars_tuning.yaml § recovery_actions)
       spin_dist: 1.047
     backup:
       plugin: "nav2_behaviors/BackUp"
-      # 조정가능 — STALL 분기: 진흙 스톨 탈출용 후진
+      # 조정가능 — STALL 분기: 진흙 스톨 탈출용 후진 (tars_tuning.yaml § recovery_actions)
       backup_dist: 0.30
       backup_speed: 0.15
-    # 기본값(global_frame: odom, transform_tolerance: 0.1)은 map 기준 costmap과 불일치라 명시.
+    # 기본값(global_frame: odom, transform_tolerance: 0.1)은 TARS의 map 기준 costmap과 불일치라 명시.
     global_frame: map
     robot_base_frame: base_link
+    # 2026-08-12: 2.5 -> 0.5, costmap 쪽과 동일 근거(local_costmap 주석 참조).
     transform_tolerance: 0.5
 
-# 조정가능 — 플랫폼 상한에 맞춘 velocity_smoother
-# max 선속도는 desired_linear_vel 0.97 과 정합.
+# 조정가능 — 플랫폼 상한에 맞춘 velocity_smoother (tars_tuning.yaml § velocity_smoother)
+# Humble bringup 기본 max_velocity [0.26,0,1.0] 은 옛 180mm 상한보다 크고 D250 상한보다 작다.
+# use_sim_time false (실차). max 선속도는 desired_linear_vel 0.779 과 정합.
 velocity_smoother:
   ros__parameters:
     use_sim_time: false
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [0.97, 0.0, 0.6]
-    min_velocity: [-0.97, 0.0, -0.6]
-    # 조정가능 — 가감속
+    max_velocity: [0.779, 0.0, 0.6]
+    min_velocity: [-0.779, 0.0, -0.6]
+    # 조정가능 — 가감속 (갯벌: 여유 있게 잡았던 0.5/1.0 → 보수 하향 2026-08-11)
+    # 수동 drive_control 선가속 0.10/감속 0.25 보다 여유 있게 두되, 자율 스톨/SLIP 줄이도록 완화.
     # 각가속 0.7 은 drive_control/gamepad max_angular_accel 과 맞춤.
     # 조정가능 — controller_server 의 FollowPath.max_angular_accel 과 반드시 같이
     # 바꿀 것(현재 둘 다 0.7). 여기가 /cmd_vel 최종단이라 실제 로봇 동작을 결정한다.

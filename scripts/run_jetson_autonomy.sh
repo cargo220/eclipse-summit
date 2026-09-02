@@ -7,8 +7,12 @@
 #   ./scripts/run_jetson_autonomy.sh                        # autonomy only
 #   ENABLE_YOLO_TRT=true ./scripts/run_jetson_autonomy.sh   # autonomy + YOLO TRT
 #   ENABLE_FOXGLOVE=false ./scripts/run_jetson_autonomy.sh
-#   ./scripts/run_jetson_autonomy.sh jebu                   # keepout map name
+#   TIDE_GPS_TOPIC=/gps/fix_tide_sim ./scripts/run_jetson_autonomy.sh
+#     # tide_watch only; does NOT feed EKF. Then: ros2 run eclipse_pkg tide_sim_gps
+#   ./scripts/run_jetson_autonomy.sh                        # named jebu lerp (default)
+#   ./scripts/run_jetson_autonomy.sh jebu                   # same as default
 #   ./scripts/run_jetson_autonomy.sh start jebu
+#   ./scripts/run_jetson_autonomy.sh tiles                  # nationwide GPS tiles
 #   KEEPOUT_SITE=test ./scripts/run_jetson_autonomy.sh
 #   ./scripts/run_jetson_autonomy.sh stop                   # stop all
 #   ./scripts/run_jetson_autonomy.sh status                 # show containers
@@ -27,8 +31,12 @@ ENABLE_FOXGLOVE="${ENABLE_FOXGLOVE:-true}"
 # tide_watch GPS source. Default is the real receiver. Never point this
 # at a fake publisher on /gps/fix — that contaminates EKF/navsat.
 TIDE_GPS_TOPIC="${TIDE_GPS_TOPIC:-/gps/fix}"
-# 구운 맵 이름만. config/keepout_<이름>_perimeter.geojson
+# Named bake. Default jebu = lerp keepout→holes (the accurate Jebu waterline).
+# tiles / gps / _ = nationwide GPS waterline/keepout tiles.
+# config/keepout_<이름>_perimeter.geojson is required for named sites.
 KEEPOUT_SITE="${KEEPOUT_SITE:-jebu}"
+# If set (>= 0), tide_watch draws that baked alpha instead of forecast.
+WATERLINE_ALPHA_OVERRIDE="${WATERLINE_ALPHA_OVERRIDE:-}"
 
 # --- YOLO TRT sidecar ---
 ENABLE_YOLO_TRT="${ENABLE_YOLO_TRT:-false}"
@@ -41,7 +49,8 @@ if [[ "${_raw_device}" =~ ^[0-9]+$ ]]; then
 else
   DEVICE="${_raw_device}"
 fi
-YOLO_IMGSZ="${YOLO_IMGSZ:-320}"
+# merged5_run1.engine is 640. 320 matches only yolov8n_imgsz320_fp16.engine.
+YOLO_IMGSZ="${YOLO_IMGSZ:-640}"
 YOLO_FORCE_CPU_NMS="${YOLO_FORCE_CPU_NMS:-false}"
 YOLO_INFER_RATE="${YOLO_INFER_RATE:-15}"
 # Cap /yolo/debug_image publish Hz (0 = match camera). Live baseline ~27 Hz.
@@ -135,22 +144,31 @@ echo "ROS_DOMAIN_ID:   $DOMAIN_ID"
 echo "enable_yolo:     $ENABLE_YOLO"
 echo "enable_foxglove: $ENABLE_FOXGLOVE"
 echo "enable_yolo_trt: $ENABLE_YOLO_TRT"
-echo "keepout_site:    $KEEPOUT_SITE"
+_site_lc="$(printf '%s' "$KEEPOUT_SITE" | tr '[:upper:]' '[:lower:]')"
+if [ "$_site_lc" = "tiles" ] || [ "$_site_lc" = "gps" ] || [ "$KEEPOUT_SITE" = "_" ]; then
+  echo "keepout_site:    <gps tiles>"
+else
+  echo "keepout_site:    $KEEPOUT_SITE"
+fi
 echo "ROS_LOG_DIR host: $TARS_HOST_LOG_DIR"
-KEEPOUT_FILE="$WORKSPACE/src/eclipse_pkg/config/keepout_${KEEPOUT_SITE}_perimeter.geojson"
-if [ ! -f "$KEEPOUT_FILE" ]; then
-  echo "keepout 맵이 없다: $KEEPOUT_FILE" >&2
-  echo "있는 이름:" >&2
-  ls -1 "$WORKSPACE/src/eclipse_pkg/config"/keepout_*_perimeter.geojson 2>/dev/null \
-    | sed -e 's#.*/keepout_##' -e 's#_perimeter.geojson##' >&2 || true
-  echo "먼저 개발 PC에서 --install 하고 젯슨에 그 geojson 을 넘겨라." >&2
-  exit 1
+if [ -n "$KEEPOUT_SITE" ] && [ "$_site_lc" != "tiles" ] && [ "$_site_lc" != "gps" ] && [ "$KEEPOUT_SITE" != "_" ]; then
+  KEEPOUT_FILE="$WORKSPACE/src/eclipse_pkg/config/keepout_${KEEPOUT_SITE}_perimeter.geojson"
+  if [ ! -f "$KEEPOUT_FILE" ]; then
+    echo "keepout 맵이 없다: $KEEPOUT_FILE" >&2
+    echo "있는 이름:" >&2
+    ls -1 "$WORKSPACE/src/eclipse_pkg/config"/keepout_*_perimeter.geojson 2>/dev/null \
+      | sed -e 's#.*/keepout_##' -e 's#_perimeter.geojson##' >&2 || true
+    echo "먼저 개발 PC에서 --install 하고 젯슨에 그 geojson 을 넘겨라." >&2
+    echo "GPS 타일만 쓰려면 start tiles." >&2
+    exit 1
+  fi
 fi
 if [ "$ENABLE_YOLO_TRT" = true ] && [[ "$YOLO_MODEL" == *merged5* ]] && [ -z "$YOLO_CLASS_NAMES" ]; then
   echo "WARN: merged5 engine without YOLO_CLASS_NAMES=person,shell — class 1 becomes bicycle and is dropped when allowed=person" >&2
 fi
 
-# Containers run detached. Stop with './scripts/run_jetson_autonomy.sh stop'.
+# NOTE: No cleanup trap needed - all containers run detached.
+# Use './scripts/run_jetson_autonomy.sh stop' to stop everything.
 
 # Automatically stop old autonomy/yolo containers if running (preserve rosbridge)
 stop_core >/dev/null 2>&1 || true
@@ -295,6 +313,7 @@ docker run -d --rm --name "$CONTAINER" \
   -e ENABLE_FOXGLOVE="$ENABLE_FOXGLOVE" \
   -e TIDE_GPS_TOPIC="$TIDE_GPS_TOPIC" \
   -e KEEPOUT_SITE="$KEEPOUT_SITE" \
+  -e WATERLINE_ALPHA_OVERRIDE="${WATERLINE_ALPHA_OVERRIDE:-}" \
   -e TZ="${TZ:-Asia/Seoul}" \
   -e DATA_GO_KR_SERVICE_KEY="${DATA_GO_KR_SERVICE_KEY:-}" \
   -e DATA_GO_KR_TIDEBED_KEY="${DATA_GO_KR_TIDEBED_KEY:-}" \
@@ -310,11 +329,18 @@ docker run -d --rm --name "$CONTAINER" \
     fi
     source install_trt/setup.bash
 
-    exec ros2 launch eclipse_pkg tars_autonomy.launch.py \
-      enable_yolo:="$ENABLE_YOLO" \
-      enable_foxglove:="$ENABLE_FOXGLOVE" \
-      tide_gps_topic:="$TIDE_GPS_TOPIC" \
-      keepout_site:="$KEEPOUT_SITE"
+    LAUNCH_ARGS=(
+      enable_yolo:="$ENABLE_YOLO"
+      enable_foxglove:="$ENABLE_FOXGLOVE"
+      tide_gps_topic:="$TIDE_GPS_TOPIC"
+    )
+    if [ -n "${KEEPOUT_SITE:-}" ]; then
+      LAUNCH_ARGS+=(keepout_site:="$KEEPOUT_SITE")
+    fi
+    if [ -n "${WATERLINE_ALPHA_OVERRIDE:-}" ]; then
+      LAUNCH_ARGS+=(waterline_alpha_override:="$WATERLINE_ALPHA_OVERRIDE")
+    fi
+    exec ros2 launch eclipse_pkg tars_autonomy.launch.py "${LAUNCH_ARGS[@]}"
   '
 
 exec docker logs -f "$CONTAINER"

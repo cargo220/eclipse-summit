@@ -1,0 +1,23 @@
+services:
+  eclipse-test-2:
+    build:
+      context: ..
+      dockerfile: docker/jetson_test2.Dockerfile
+    image: eclipse-test-2:humble
+    container_name: eclipse-test-2
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      DISPLAY: ${DISPLAY:-}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      - /dev:/dev
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ..:/workspaces/eclipse-test-2
+      - ../rosbags:/workspace/eclipse-test-2/rosbags
+    command:
+      - bash
+      - -lc
+      - cd /workspaces/eclipse-test-2 && source install/setup.bash && ros2 launch eclipse_pkg description.launch.py

@@ -18,14 +18,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
-def dataset_height_grid_mm(lo=14.0, hi=91.0, step=5.0):
-    if step <= 0.0:
-        return (lo,)
-    count = int((hi - lo) // step)
-    points = [round(lo + i * step, 6) for i in range(count + 1)]
-    if points[-1] < hi - 1e-9:
-        points.append(hi)
-    return tuple(points)
+from eclipse_pkg.eclipse_ai_config import dataset_height_grid_mm
 
 
 SCHEMA_ID = "tars-height-outcome-v1"
@@ -48,7 +41,8 @@ DEFAULT_EKF_DROP_WEIGHT = 1.0
 class HeightObservation:
     """One policy input sample.
 
-    ``state`` keys match eclipse_test_controller.height_ai_observation().
+    ``state`` uses the same key names as
+    eclipse_ai_controller.height_ai_state_snapshot().
     """
 
     current_down_mm: float

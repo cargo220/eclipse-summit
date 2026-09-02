@@ -57,6 +57,7 @@ private:
   std::vector<RingAabb> last_clear_boxes_;
   bool polygon_active_{false};
   bool need_clear_{false};
+  bool painted_{false};
   double polygon_margin_m_{4.0};
 
   double resolution_{0.1};

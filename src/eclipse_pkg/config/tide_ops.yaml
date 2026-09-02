@@ -1,7 +1,7 @@
 # TARS 조석 활동 윈도우(tide_ops) 설정
 # 조석예보: 국립해양조사원 조석예보 API — data.go.kr 공공데이터포털 (REST, JSON)
 # 서비스 키는 환경변수 DATA_GO_KR_SERVICE_KEY로만 읽는다. 절대 이 파일에 기록하지 말 것.
-# 엔드포인트·예보지점 코드는 조석예보 API 명세. 임계값은 현장 기준.
+# 엔드포인트·예보지점 코드는 활용가이드 확정 명세(2026-08-06) 기준. 임계값 기준만 미정.
 tide_ops:
   # 곰소항 자체는 예보지점 목록에 없음 → 위도(DT_0068)가 곰소만·변산 최근접 예보지점.
   # 필요 시 대안: 격포항 SO_1262, 군산 DT_0018.
@@ -19,8 +19,8 @@ tide_ops:
     ground_elevation_m: null             # 있으면 옛 공식과 공간 시각 중 이른 쪽
     safety_margin_m: 0.3
     retreat_distance_m: 300              # 지상고 경로 폴백. 공간 모델은 gps_home 거리
-    # 조정가능 — 실차 상한 ≈0.9742 (D250·G2.5·130 tick). 계산은 min(avg, max)
-    robot_max_speed_mps: 0.9742
+    # 조정가능 — 실차 상한 ≈0.7794 (D250·G=2·130 tick). 계산은 min(avg, max)
+    robot_max_speed_mps: 0.7794
     robot_avg_speed_mps: 0.3             # 갯벌 복귀 시간 계산용 가정. 상한보다 작게
     time_buffer_min: 10
     spatial_margin_m: 20.0               # 마른 폭에서 빼는 여유
@@ -35,3 +35,5 @@ tide_ops:
   polygon_margin_m: 4.0
   # GPS 기반 관측소 자동 선택 (코드 내 _TIDE_STATIONS 사용)
   enable_gps_station_select: true
+# 참고: 고·저조(시각·조위) 보조 API — 이번 버전에서는 미사용.
+#   https://apis.data.go.kr/1192136/tideFcstHghLw/GetTideFcstHghLwApiService

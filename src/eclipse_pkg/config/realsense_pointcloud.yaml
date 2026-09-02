@@ -3,6 +3,9 @@
 # Jetson ARM NEON build (realsense2_camera 4.58.2) declares pointcloud params as
 # pointcloud__neon_.* — rs_launch pointcloud.enable is ignored; set them here.
 #
+# Load notes (2026-08-10 perf on Xavier):
+# - Colored pointcloud + DDS publish was a top native hotspot.
+# - image_transport theora/compressed on color+depth multiplied CPU further.
 # Costmap + pointcloud_filter only need XYZ raw points; YOLO needs raw color.
 
 # --- Point cloud (XYZ for costmap; RGB texture not required) ---
@@ -29,5 +32,5 @@ camera.aligned_depth_to_color.image_raw.enable_pub_plugins:
 camera.depth.image_rect_raw.enable_pub_plugins:
   - image_transport/raw
 
-# RGBD combo is an extra copy path.
+# Do not publish RGBD combo message (extra copy path).
 enable_rgbd: false

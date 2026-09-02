@@ -278,28 +278,48 @@ inline void visit_corridor_cells(
     {
       continue;
     }
-    const double minx = std::min(cx0, cx1) - margin;
-    const double maxx = std::max(cx0, cx1) + margin;
-    const double miny = std::min(cy0, cy1) - margin;
-    const double maxy = std::max(cy0, cy1) + margin;
-    int i0 = static_cast<int>(std::floor((minx - origin_x) / res));
-    int i1 = static_cast<int>(std::floor((maxx - origin_x) / res)) + 1;
-    int j0 = static_cast<int>(std::floor((miny - origin_y) / res));
-    int j1 = static_cast<int>(std::floor((maxy - origin_y) / res)) + 1;
-    i0 = std::max(i0, min_i);
-    i1 = std::min(i1, max_i);
-    j0 = std::max(j0, min_j);
-    j1 = std::min(j1, max_j);
-    for (int j = j0; j < j1; ++j) {
-      const double wy = origin_y + (j + 0.5) * res;
-      for (int i = i0; i < i1; ++i) {
-        const double wx = origin_x + (i + 0.5) * res;
-        if (distance_to_segment(wx, wy, ox0, oy0, ox1, oy1) <= margin) {
-          fn(i, j);
+    const double cdx = cx1 - cx0;
+    const double cdy = cy1 - cy0;
+    const double clen = std::hypot(cdx, cdy);
+    const double chunk = std::max(margin, 4.0 * res);
+    const int n_chunks = (clen > chunk)
+      ? static_cast<int>(std::ceil(clen / chunk)) : 1;
+    for (int c = 0; c < n_chunks; ++c) {
+      const double t0 = static_cast<double>(c) / static_cast<double>(n_chunks);
+      const double t1 = static_cast<double>(c + 1) / static_cast<double>(n_chunks);
+      const double sx0 = cx0 + t0 * cdx;
+      const double sy0 = cy0 + t0 * cdy;
+      const double sx1 = cx0 + t1 * cdx;
+      const double sy1 = cy0 + t1 * cdy;
+      const double minx = std::min(sx0, sx1) - margin;
+      const double maxx = std::max(sx0, sx1) + margin;
+      const double miny = std::min(sy0, sy1) - margin;
+      const double maxy = std::max(sy0, sy1) + margin;
+      int i0 = static_cast<int>(std::floor((minx - origin_x) / res));
+      int i1 = static_cast<int>(std::floor((maxx - origin_x) / res)) + 1;
+      int j0 = static_cast<int>(std::floor((miny - origin_y) / res));
+      int j1 = static_cast<int>(std::floor((maxy - origin_y) / res)) + 1;
+      i0 = std::max(i0, min_i);
+      i1 = std::min(i1, max_i);
+      j0 = std::max(j0, min_j);
+      j1 = std::min(j1, max_j);
+      for (int j = j0; j < j1; ++j) {
+        const double wy = origin_y + (j + 0.5) * res;
+        for (int i = i0; i < i1; ++i) {
+          const double wx = origin_x + (i + 0.5) * res;
+          if (distance_to_segment(wx, wy, ox0, oy0, ox1, oy1) <= margin) {
+            fn(i, j);
+          }
         }
       }
     }
   }
+}
+
+inline bool should_restamp_tide(
+  bool need_clear, bool origin_moved, bool size_changed, bool painted)
+{
+  return need_clear || origin_moved || size_changed || !painted;
 }
 
 // Interior fill for small closed rings only. A keepout whose AABB covers

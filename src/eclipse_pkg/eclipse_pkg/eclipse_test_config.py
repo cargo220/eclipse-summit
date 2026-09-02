@@ -14,6 +14,8 @@ DXL_ALL_IDS = DXL_LEFT_IDS + DXL_RIGHT_IDS
 # Sign applied to that side's robot-frame command before Goal write.
 # Also used to invert present-velocity feedback for odom.
 # Baseline: left +1, right -1 (right motors mounted opposite).
+# 2026-08-20: ID 3 and ID 12 flipped.
+# 2026-08-24: ID 3 and ID 12 flipped again (Lee).
 DXL_WHEEL_GOAL_SIGN_BY_ID = {
     2: 1,
     3: 1,
@@ -26,7 +28,7 @@ def dxl_wheel_goal_sign(dxl_id):
     return int(DXL_WHEEL_GOAL_SIGN_BY_ID.get(int(dxl_id), 1))
 # Height: 1/4 front axle, 11/14 rear axle. Pair IDs unused until ping.
 # Skid-steer command groups stay left (2, 3) / right (12, 13).
-# Dual CM-900:
+# Dual CM-900 (2026-08-24 Wizard remap, Xavier ping):
 # FRONT ACM0 = 1,2,4,12 (front height + front wheels) + 5 (camera pan).
 # REAR ACM3 = 3,11,13,14 (rear height + rear wheels).
 # Board itself answers as ID 200 on both. Left remains 2,3 / right 12,13.
@@ -75,16 +77,16 @@ def wheel_bulk_read_is_usable(front_ok, rear_ok):
     return bool(front_ok) and bool(rear_ok)
 
 # Robot geometry and wheel/motor conversion.
-# 조정가능 — 바퀴/기구 튜닝.
-# 반지름·윤거·기어비가 바뀌면 odom·명령 RPM 환산·최대 선속도 한계가 같이 흔들림.
+# 조정가능 — 바퀴/기구 튜닝 (상세 목록: robot_specifications/tars_tuning.yaml)
+#   반지름·윤거·기어비가 바뀌면 odom·명령 RPM 환산·최대 선속도 한계가 같이 흔들림.
 WHEEL_SEPARATION = 0.4788  # 조정가능: 좌우 바퀴 간격(m)
 # 패들테스트 선정 D250: 지름 250 mm → 반지름 0.125 m.
 # (코드 주석의 "반지름 250"은 지름 숫자. R=0.250 m 가 아님.)
 WHEEL_COMMAND_RADIUS = 0.125  # 조정가능: 명령용 바퀴 반지름(m), 직경 250 mm
 WHEEL_ODOM_RADIUS = 0.125  # 조정가능: 오도메트리용 바퀴 반지름(m)
-# 증속 G=2.5. ω_wheel = G * ω_motor.
-# 이빨 수는 비만 표현: 모터 50 / 바퀴 20. 실 풀리 이가 달라도 G가 2.5면 됨.
-MOTOR_DRIVE_GEAR_TEETH = 50.0  # 조정가능: 모터측 풀리 이 (증속)
+# 증속 G=2. ω_wheel = G * ω_motor.
+# 이빨 수는 비만 표현: 모터 40 / 바퀴 20. 실 풀리 이가 달라도 G가 2면 됨.
+MOTOR_DRIVE_GEAR_TEETH = 40.0  # 조정가능: 모터측 풀리 이 (증속)
 WHEEL_DRIVEN_GEAR_TEETH = 20.0  # 조정가능: 바퀴측 풀리 이
 MOTOR_TO_WHEEL_SPEED_RATIO = MOTOR_DRIVE_GEAR_TEETH / WHEEL_DRIVEN_GEAR_TEETH
 VELOCITY_UNIT_RPM = 0.229  # Dynamixel 속도 단위 환산 (펌웨어 고정에 가깝)
@@ -94,7 +96,7 @@ RAD_PER_SEC_TO_DXL_VEL_FACTOR = (
 )
 # 180 mm 실차에서 읽은 XM540 Velocity Limit. 틱 한계는 바퀴가 바뀌어도 같다.
 DXL_WHEEL_VELOCITY_LIMIT_TICKS = 130
-# v = tick * unit_rpm/60 * 2π * R * G  → 130틱에서 ≈ 0.9742 m/s
+# v = tick * unit_rpm/60 * 2π * R * G  → 130틱에서 ≈ 0.7794 m/s
 PLATFORM_MAX_LINEAR_MPS = (
     DXL_WHEEL_VELOCITY_LIMIT_TICKS
     / RAD_PER_SEC_TO_DXL_VEL_FACTOR
@@ -118,6 +120,10 @@ HEIGHT_TORQUE_HOLD_ON_SHUTDOWN = True
 # Serial bulk reads dominate controller CPU/load — slower is cheaper, but any
 # sample-count buffer must scale with CONTROL_DT so wall-time windows stay fixed
 # (current std buffer, terrain sample counts, baseline EMA). See helpers below.
+#
+# History: 2026-08-10 load tuning briefly ran 0.20 s (5 Hz); Lee reverted to
+# the long-running 0.125 s (8 Hz) default the same day. Sample-count buffers
+# below re-derive automatically from the fixed wall-time reference windows.
 CONTROL_DT = 0.125
 CONTROL_HZ = 1.0 / CONTROL_DT
 
@@ -128,10 +134,13 @@ _REF_BUFFER_SIZE = 10  # samples at 8 Hz → 1.25 s current window
 _REF_TERRAIN_SAMPLES = 4  # consecutive samples at 8 Hz → 0.5 s
 _REF_BASELINE_ALPHA = 0.01  # per-sample EMA at 8 Hz
 
-# 조정가능 — /cmd_vel 침묵 시 휠 정지
+# 2026-08-09 필드: gap 때문에 0.5→2.0→4.0으로 완화했었음.
+# 2026-08-10 load 튜닝 후 추종 중 cmd_vel median~0.05s·긴 gap은 드묾 → 2.0으로 재조정.
+# 더 줄이려면 추종 중 max gap 재측정 후. 이상적 목표는 0.5.
+# 조정가능 — /cmd_vel 침묵 시 휠 정지 (tars_tuning.yaml § controller_cmd_timeouts)
 CMD_VEL_TIMEOUT_SEC = 2.0
 HEIGHT_STATUS_DT = 0.5
-HEIGHT_VOLTAGE_STATUS_DT = 0.5  # addr 144 발행 주기(s)
+HEIGHT_VOLTAGE_STATUS_DT = 0.5  # 이번만: addr 144 발행 0.5s. 끝나면 5.0으로 되돌릴 것.
 # Covariance recompute cadence (wall time). Independent of CONTROL_DT; still
 # appends current samples every wheel tick into BUFFER_SIZE.
 COV_UPDATE_DT = 0.5
@@ -143,8 +152,8 @@ DEFAULT_VELOCITY_P_GAIN = 800
 HEIGHT_POSITION_P_GAIN = 800  # 조정가능: 높이 Position P (피크 홀드 유지용)
 HEIGHT_POSITION_I_GAIN = 0  # 조정가능: 높이 Position I (80은 기동 과부하)
 HEIGHT_POSITION_D_GAIN = 0
-# Height XM540 Profile (RAM). 33 ≈ 40 mm/s at 45 mm. 0 = unlimited.
-# Written at startup and on every height Goal Position write.
+# Height XM540 Profile (RAM). Live Xavier 2026-08-20: 33 ≈ 40 mm/s at 45 mm.
+# 0 = unlimited. Written at startup and on every height Goal Position write.
 HEIGHT_PROFILE_VELOCITY = 33
 HEIGHT_PROFILE_ACCELERATION = 8
 
@@ -154,7 +163,7 @@ MOTOR_TEMPERATURE_WARN_C = 55
 MOTOR_TEMPERATURE_STOP_C = 65
 MOTOR_PWM_LIMIT = 885
 # --- 모터 스톨 → /motor/safety_state 에 "stall" 문자열을 내는 물리 임계 ---
-# 조정가능 — recovery STALL 라벨 원천
+# 조정가능 — recovery STALL 라벨 원천 (tars_tuning.yaml § recovery_stall)
 # Recovery StallDetector 는 문자열만 보고, 아래 숫자는 컨트롤러가 라벨을 붙일 때 사용.
 # 조건(동시): |cmd|≥MIN_CMD  and  휠속도≤MAX_WHEEL  and  max|PWM|≥PWM_STALL
 #   → 유지 중: WARN_STALL_PWM_*  /  DURATION_SEC 이상: FAULT_stall_...
@@ -253,8 +262,9 @@ def camera_pan_startup_goal(min_pos, max_pos):
 
 
 # Same-direction remount: each axle shares one window so a pair cannot
-# clip at different ticks and twist the shaft.
+# clip at different ticks and twist the shaft. Live Xavier 2026-08-21.
 HEIGHT_POSITION_LIMITS_BY_ID = {
+    # Trial A 2026-08-22: live EEPROM 1/4 = 2116-3246. B (max 3225) not better at 45 mm.
     DXL_HEIGHT_FRONT_ID: (2116, 3246),
     DXL_HEIGHT_FRONT_PAIR_ID: (2116, 3246),
     DXL_HEIGHT_REAR_ID: (824, 1810),
@@ -268,6 +278,8 @@ HEIGHT_POSITION_HOLD_DEADBAND_TICKS = 40  # 조정가능: 홀드 허용 잔여 �
 # Dynamixel Present Velocity units (addr 128). Do not latch Goal=Present
 # while the 4-bar is still moving — that overshoots then pulls back.
 HEIGHT_HOLD_MAX_VELOCITY = 3  # 조정가능: 이보다 빠르면 홀드 금지
+# Lee 2026-08-22: longer inhibit made the visible return last longer.
+# Trying 0.7 s; stall hold after stop is unchanged.
 HEIGHT_HOLD_INHIBIT_SEC = 0.7  # 조정가능: 높이 명령 직후 홀드 금지(초)
 # Present a few ticks past EEPROM min/max used to skip stall hold entirely
 # (ID 11=821 vs min 824), leaving pair motors on table Goal.
@@ -394,8 +406,8 @@ def height_hold_goal_from_present(present, min_pos, max_pos, slack=None):
 
 # If any height motor |current| stays at/above this, snap Goal=Present.
 # Ampere cap is load-independent; tick deadband is not. XM540 unit 2.69 mA.
-# 0 이하면 소프트웨어 클램프 없음. 로컬 기본 2500, 자비에 스테이징 3500.
-HEIGHT_CURRENT_CLAMP_MA = 2500.0
+# 0 이하면 소프트웨어 클램프 없음. 2500 → 4000 (2026-09-02).
+HEIGHT_CURRENT_CLAMP_MA = 4000.0
 
 
 def height_current_clamp_is_enabled(limit_ma=None):
@@ -403,8 +415,8 @@ def height_current_clamp_is_enabled(limit_ma=None):
     if limit_ma is None:
         limit_ma = HEIGHT_CURRENT_CLAMP_MA
     return float(limit_ma) > 0.0
-# Software stop for height IDs 1/4/11/14. Wheel temp/stall path is live.
-# Firmware Temperature Limit stays 70 C as last resort.
+# Software stop for height IDs 1/4/11/14. Wheel software temp path is still
+# bypassed. Firmware Temperature Limit stays 70 C as last resort.
 HEIGHT_TEMPERATURE_STOP_C = 65  # 조정가능: 높이 Present Temperature 정지(°C)
 HEIGHT_INITIALIZE_ATTEMPTS = 3
 HEIGHT_INITIALIZE_TIMEOUT_SEC = 4.0
@@ -412,12 +424,26 @@ HEIGHT_SHUTDOWN_TIMEOUT_SEC = 4.0
 HEIGHT_INITIALIZE_RETRY_DELAY_SEC = 0.2
 HEIGHT_POSITION_POLL_SEC = 0.1
 
-# Height AI runs in-process on the controller timer (stub policy holds height).
-# HEIGHT_STATE_AI lives in eclipse_test_controller.py with the other FSM labels.
+# Height AI arbitration (policy itself is still a stub that holds the current
+# height; see height_ai_policy.py). Inference runs IN-PROCESS on the
+# controller's own timer — the standalone height_ai_node was removed
+# 2026-08-11 after live measurement showed it cost 8.6% of a core while
+# computing nothing, mostly re-deserializing /odometry/filtered that the
+# controller already deserializes.
+# HEIGHT_STATE_AI itself stays in eclipse_test_controller.py, alongside
+# HEIGHT_STATE_FIXED/HEIGHT_STATE_MANUAL (existing pattern: FSM state labels
+# live with the FSM, not in this constants module).
 HEIGHT_AI_APPLY_DT = HEIGHT_STATUS_DT  # same cadence as publish_height_status
+# NOTE: a proposal-staleness timeout used to live here for the standalone
+# node. In-process there is no transport, so a proposal cannot be stale.
+# Placeholder — no servo rate has been measured yet. Derived conservatively
+# from HEIGHT_DATASET_MOVE_TIMEOUT_SEC (eclipse_ai_config.py: up to 30 mm
+# expected within 3.0 s, i.e. an implicit ~10 mm/s ceiling); halved for
+# margin. Recalibrate once real move-rate data exists.
 HEIGHT_AI_MAX_RATE_MM_PER_S = 5.0
 HEIGHT_AI_DEADBAND_MM = 0.5
-# Serve-side /probe/angle freshness.
+# Serve-side /probe/angle freshness. Same numbers as eclipse_ai_config
+# collection gates so train/serve contact labels match.
 HEIGHT_AI_PROBE_STALE_SEC = 0.5
 HEIGHT_AI_PROBE_CONTACT_ANGLE = 0.0
 HEIGHT_AI_PROBE_CONTACT_TOLERANCE = 3.0
@@ -484,7 +510,8 @@ BASE_COV = 0.0018
 # Autonomous covariance handling accepts either corrected-GNSS state.
 GPS_MIN_GOOD_FIX_STATUS = 1
 # Allow RTK Float (1) as the minimum status for starting a goal. RTK Fixed
-# (2) remains preferred.
+# (2) remains preferred, but Float operation is explicitly enabled
+# (2026-08-10 Lee 결정, docker_2/docker_3 병합).
 GPS_MIN_NAV_START_FIX_STATUS = 1
 GPS_GOOD_WHEEL_ODOM_COV = 0.015
 GPS_POSE_COVARIANCE_FLOOR = 0.004
@@ -525,7 +552,8 @@ CURRENT_COVARIANCE_CONFIG = CurrentCovarianceConfig(
 def height_target_positions(front_pos, rear_pos):
     """Map ID 1 / ID 11 ticks onto all four motors.
 
-    Same 4-bar lengths. Pair IDs 4 and 14 copy the primary tick on that axle.
+    Same 4-bar lengths. After the 2026-08-21 remount, pair IDs 4 and 14
+    copy the primary tick on that axle.
     """
     from eclipse_pkg.height_table import (
         height_down_mm_for_ticks,

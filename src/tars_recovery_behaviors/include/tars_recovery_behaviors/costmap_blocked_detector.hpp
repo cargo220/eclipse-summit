@@ -49,7 +49,7 @@ private:
 
   // bt_navigator 의 client 노드는 아무도 spin 하지 않는다 — 기본 콜백그룹에
   // 둔 구독은 콜백이 영원히 안 돈다. 전용 콜백그룹 + 로컬 executor 를 두고
-  // tick마다 직접 spin. stall_detector.hpp 참고.
+  // tick 마다 직접 spin 한다 (2026-08-12 라이브 눈멂 사건, stall_detector.hpp 참고).
   rclcpp::CallbackGroup::SharedPtr callback_group_;
   rclcpp::executors::SingleThreadedExecutor callback_group_executor_;
 

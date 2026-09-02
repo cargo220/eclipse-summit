@@ -1,7 +1,16 @@
 // TARS mudflat recovery behaviors.
 //
-// SetHeight — /drive/height_step_mm 에 목표 높이를 내고 Wait 카운트다운만 한다.
-// 실제 도달 여부는 보지 않는다.
+// SetHeight — recovery behavior that raises/lowers the probe (or any height
+// actuator) by publishing a target height on /drive/height_step_mm during a
+// recovery episode, then waits a fixed duration.
+//
+// Design (same skeleton as MudAssess):
+//   - derives from nav2_behaviors::TimedBehavior<nav2_msgs::action::Wait>, so
+//     BT trees can route to it the same way they route to Wait / MudAssess,
+//   - onRun() publishes <Float32> target_height on /drive/height_step_mm,
+//   - onCycleUpdate() only runs the base Wait countdown — it never inspects
+//     whether the height was actually reached,
+//   - onActionCompletion() is intentionally empty.
 
 #ifndef TARS_RECOVERY_BEHAVIORS__SET_HEIGHT_HPP_
 #define TARS_RECOVERY_BEHAVIORS__SET_HEIGHT_HPP_
@@ -45,7 +54,8 @@ protected:
   double wait_duration_s_{0.0};
   WaitAction::Feedback::SharedPtr feedback_;
 
-  // Parameters (behavior_server namespace, set_height. prefix).
+  // Parameters (read within the behavior_server node namespace,
+  // "set_height." plugin prefix — MudAssess pattern).
   double target_height_mm_{30.0};
   double wait_duration_{2.0};
   bool enable_{true};

@@ -47,7 +47,8 @@ def generate_launch_description():
             description='Velocity topic published by gamepad_drive.',
         ),
 
-        # Height AI runs inside eclipse_test_controller, not a separate node.
+        # Height AI policy runs inside eclipse_test_controller (the Dynamixel
+        # bus owner), not as its own node — see height_ai_apply_loop.
         DeclareLaunchArgument(
             'enable_height_ai',
             default_value='true',
@@ -129,13 +130,13 @@ def generate_launch_description():
                 'frame_id': 'gps_link',
                 'fix_topic': '/gps/fix',
                 'vel_topic': '/gps/vel',
-                # NGII RTS2 VRS. 계정/비밀번호는 환경변수로 주입한다.
+                # NGII RTS2 VRS. 비밀번호는 TARS_NTRIP_PASS 환경변수로 주입한다.
                 'ntrip_host': 'rts2.ngii.go.kr',
                 'ntrip_port': 2101,
-                'ntrip_user': '',
-                'ntrip_pass': '',
+                'ntrip_user': 'tars260223',
+                'ntrip_pass': 'ngii',
                 'mountpoint': 'VRS-RTCM32',
-                # 조정가능 — GPS 모션 헤딩 최소 속도
+                # 조정가능 — GPS 모션 헤딩 최소 속도 (tars_tuning § gps_heading_speed_gates)
                 # bootstrap creep 0.18 m/s 보다 낮아야 부팅 헤딩 샘플이 나옴.
                 'heading_min_speed_mps': 0.15,
             }],
@@ -161,6 +162,14 @@ def generate_launch_description():
             }],
         ),
 
+        # base_link->imu_link / base_link->gps_link used to be two separate
+        # static_transform_publisher processes here. They now live as fixed
+        # joints in robot.urdf, so robot_state_publisher above emits them on
+        # the same /tf_static — two fewer processes and DDS participants, with
+        # the TRANSIENT_LOCAL latch still served by a long-lived publisher.
+        # The offsets still need physical verification; see the warning block
+        # in robot.urdf.
+
         Node(
             package='robot_localization',
             executable='ekf_node',
@@ -179,12 +188,21 @@ def generate_launch_description():
             parameters=[navsat_config_path],
             remappings=[
                 ('/imu', '/imu/data'),
+                # gps_fix_gate_node (tars_autonomy.launch.py) withholds raw
+                # /gps/fix until heading_calibration_node has corrected EKF
+                # yaw, so this node's one-shot orientation datum lock uses
+                # the calibrated yaw instead of the arbitrary boot-time IMU
+                # yaw. gps_fix_gate_node removed 2026-08-15 — navsat gets /gps/fix directly.
                 ('/odometry/filtered', '/odometry/filtered'),
                 ('/odometry/gps', '/odometry/gps_raw'),
             ],
             respawn=True,
             respawn_delay=2.0,
         ),
+
+        # gps_pose_covariance_odom and gps_velocity_odom merged into GPS_node
+        # (2026-08-15). GPS_node now publishes /odometry/gps and
+        # /odometry/gps_velocity directly.
 
         Node(
             package='eclipse_pkg',
@@ -243,6 +261,9 @@ def generate_launch_description():
                 'skip_device_check': True,
             }],
         ),
+
+        # plotjuggler removed: headless Jetson aborts (no DISPLAY) and only
+        # produces process-has-died noise; use laptop-side PlotJuggler if needed.
 
         Node(
             package='teleop_twist_keyboard',

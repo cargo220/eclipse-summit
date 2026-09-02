@@ -46,7 +46,10 @@ PVT_HACC = 40
 PVT_VACC = 44
 PVT_GSPEED = 60
 PVT_HEADMOT = 64
-# u-blox UBX-NAV-PVT accuracy estimates for speed and heading-of-motion.
+# u-blox UBX-NAV-PVT also reports the receiver's own accuracy estimates for
+# speed and heading-of-motion. Until 2026-08-12 neither was read, so
+# /gps/heading was published on a raw gSpeed threshold alone — see the
+# heading gate in _publish_heading() for why that failed in the field.
 PVT_SACC = 68      # speed accuracy estimate, mm/s
 PVT_HEADACC = 72   # heading-of-motion accuracy estimate, 1e-5 deg
 
@@ -314,20 +317,42 @@ class GpsNode(Node):
         self.declare_parameter("fix_topic", "/gps/fix")
         self.declare_parameter("vel_topic", "/gps/vel")
         self.declare_parameter("heading_topic", "/gps/heading")
-        # 조정가능 — 모션 헤딩 발행 최소 지면속도
-        # description.launch 는 0.15 로 덮어씀. bootstrap creep 0.2 보다 낮아야 헤딩이 나온다.
+        # 조정가능 — 모션 헤딩 발행 최소 지면속도 (tars_tuning.yaml § gps_heading_speed_gates)
+        # description.launch 는 0.15 로 덮어씀. 기본도 0.15: bootstrap creep 0.2 가 헤딩을
+        # 만들 수 있게 함. 예전 기본 0.3 은 creep(0.2)보다 커서 헤딩이 안 나올 수 있었음.
         self.declare_parameter("heading_min_speed_mps", 0.15)
-        # 조정가능 — /gps/heading 신뢰도 게이트 (_heading_is_trustworthy).
-        # headAcc는 수신기 heading 정확도(도). speed_acc_factor는 gSpeed가
-        # speed accuracy의 몇 배를 넘어야 이동으로 볼지.
+        # 조정가능 — /gps/heading 신뢰도 게이트 (2026-08-12 추가, 근거는
+        # _heading_is_trustworthy docstring). headAcc 임계는 수신기가 스스로
+        # 보고하는 heading 정확도(도)이고, speed_acc_factor 는 gSpeed 가
+        # 수신기 speed accuracy 의 몇 배를 넘어야 "진짜 이동"으로 볼지다.
         self.declare_parameter("heading_max_acc_deg", 45.0)
         self.declare_parameter("heading_speed_acc_factor", 0.0)
         self.declare_parameter("heading_yaw_variance", 0.05)
-        # NGII 네트워크RTK(VRS). 비밀번호는 소스에 저장하지 않고 launch 환경변수로 주입.
-        # 계정당 동시접속 1개. TCP가 비정상 종료되면 caster에 유령 세션이 남아 401이 난다.
+        # NGII 네트워크RTK(VRS). 기선이 사실상 0 이라 주행 중에도 Fixed 가 유지되고
+        # 재기동 후 수렴도 수 초다. 단일 관측소(single-base)로 대체하면 최근접
+        # CHEN 도 16.7 km 라 움직이는 순간 Fixed 가 깨진다(2026-08-13 실측:
+        # 정지 0.017 m -> 주행 0.87~3.0 m 진동).
+        #
+        # 401 이 뜨면 계정 문제로 오진하지 말 것 — NGII 는 계정당 동시접속 1개이고,
+        # 네트워크가 바뀌어 TCP 가 정상 종료 없이 끊기면 caster 에 유령 세션이 남아
+        # 같은 계정의 새 접속이 몇 시간 동안 401 로 거부된다(2026-08-13 실제 발생).
+        # 대처: 세션이 타임아웃될 때까지 기다리거나, 아래 예비 보정원으로 임시 전환.
+        #   예비: www.gnssdata.or.kr / CHEN-RTCM32 / <계정 이메일> / "gnss"
+        #        (single-base 라 정확도는 나오지만 수렴이 느리고 주행 중 열화)
+        # 보정원 선택 근거 (2026-08-13, 전부 라이브 실측 — 추측 아님):
+        #   gnssdata CHEN-RTCM32 -> 1006 + MSM5 x5(GPS/GLO/GAL/QZS/BDS). **RTK Fixed
+        #                           hacc 0.014m 확인. 현재 유일하게 RTK 가 나오는 소스.**
+        #   NGII RTS2/VRS-RTCM32 -> DGNSS 6.7~7.8m (2회 재현)
+        #   NGII RTS1/VRS-RTCM31 -> 1004/1012 legacy. 사용 불가
+        #   NGII RTS1/VRS-RTCM34 -> 1005 + MSM5 x4(GLONASS 없음). **DGNSS 8.5m**
+        # 처음엔 "legacy 냐 MSM 이냐"가 갈림길이라고 봤으나 VRS-RTCM34 가 MSM5 를
+        # VRS-RTCM32는 현재 RTS2 계정으로 접속 가능한 NGII 가상 기준국이다.
+        # VRS는 아래 NTRIP 연결 후 실제 GPS 위치의 GGA를 보내야 보정 스트림이
+        # 생성된다. 비밀번호는 소스에 저장하지 않고 launch 환경변수로 주입한다.
+        #
         self.declare_parameter("ntrip_host", "rts2.ngii.go.kr")
         self.declare_parameter("ntrip_port", 2101)
-        self.declare_parameter("ntrip_user", "")
+        self.declare_parameter("ntrip_user", "ley1845")
         self.declare_parameter("ntrip_pass", "")
         self.declare_parameter("mountpoint", "VRS-RTCM32")
         self.declare_parameter("reconnect_delay", 30.0)
@@ -382,6 +407,7 @@ class GpsNode(Node):
             0.2, self._publish_visual_heading
         )
 
+        # --- Merged from gps_pose_covariance_odom ---
         self.declare_parameter("pose_covariance_floor", GPS_POSE_COVARIANCE_FLOOR)
         self._pose_cov_floor = float(
             self.get_parameter("pose_covariance_floor").value
@@ -393,6 +419,7 @@ class GpsNode(Node):
             Odometry, '/odometry/gps_raw', self._covariance_floor_callback, 10
         )
 
+        # --- Merged from gps_velocity_odom ---
         self.declare_parameter("speed_variance", 0.004)
         self.declare_parameter("lateral_velocity_variance", 10.0)
         self.declare_parameter("angular_velocity_variance", 10.0)
@@ -448,7 +475,8 @@ class GpsNode(Node):
             self.get_logger().error(f"GPS port connection failed: {exc}")
             raise RuntimeError("GPS connection failed") from exc
 
-        # Soft recover: NTRIP socket bounce + serial reopen. 노드 재시작 없음.
+        # Soft recover only (no node restart): NTRIP socket bounce + serial reopen.
+        # Used by gps_health_supervisor after GPS-loss W2 timeout.
         self._recover_srv = self.create_service(
             Trigger, "/gps/recover", self._recover_callback
         )
@@ -603,7 +631,7 @@ class GpsNode(Node):
                     self.get_logger().error(
                         f"[Reader] serial error: {exc}; waiting for /gps/recover"
                     )
-                # 스레드를 유지한다. /gps/recover가 포트를 다시 연다.
+                # Do not exit the thread — soft recover reopens the port.
                 self._stop.wait(timeout=0.5)
             except Exception as exc:
                 if not self._stop.is_set():
@@ -775,11 +803,21 @@ class GpsNode(Node):
     def _heading_is_trustworthy(
         self, gnss_fix_ok, speed_ms, sacc_mm_s, headacc_1e5deg, headmot_raw
     ):
-        """True when this epoch's heading-of-motion may be published.
+        """Decide whether this epoch's heading-of-motion may be published.
 
-        A speed floor alone can republish a frozen headMot while gSpeed noise
-        crosses the threshold. The gate uses the receiver's own accuracy
-        estimates and rejects an unchanged heading.
+        Until 2026-08-12 the only gate was `speed_ms >= heading_min_speed`,
+        and that let a STALE heading through. Measured from a rosbag that
+        evening: /gps/heading emitted one identical value (-142.406 deg) 200
+        times over 162.8 s, covering the entire heading-calibration window, so
+        the calibration averaged five copies of one frozen number and reported
+        a sample spread of 0.0 deg — which reads like a perfect measurement
+        and is in fact the signature of a sensor that is not updating.
+        Two things conspire: u-blox holds headMot at its last value while the
+        receiver is not really moving, and gSpeed noise intermittently crosses
+        a fixed threshold while stationary (the observed publish rate was
+        ~1.2 Hz against a 5 Hz fix rate, i.e. roughly one epoch in four).
+        So the gate now asks the receiver what it thinks of its own numbers,
+        and refuses to republish a value that has not changed.
         """
         if not gnss_fix_ok:
             return False
@@ -860,6 +898,7 @@ class GpsNode(Node):
         pose.pose.covariance[35] = self._heading_yaw_variance
         self._pub_heading_visual.publish(pose)
 
+    # --- gps_pose_covariance_odom merge ---
     def _covariance_floor_callback(self, msg: Odometry) -> None:
         corrected = list(msg.pose.covariance)
         corrected[0] = max(float(corrected[0]), self._pose_cov_floor)
@@ -867,6 +906,7 @@ class GpsNode(Node):
         msg.pose.covariance = corrected
         self._pub_odom_gps.publish(msg)
 
+    # --- gps_velocity_odom merge ---
     def _wheel_odom_callback(self, msg: Odometry) -> None:
         self._last_wheel_odom_time = self.get_clock().now()
         self._last_wheel_vx = msg.twist.twist.linear.x

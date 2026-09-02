@@ -40,7 +40,8 @@ _UTMK = (
 DEFAULT_CONFIG_PATH = os.path.join('src', 'eclipse_pkg', 'config', 'tide_ops.yaml')
 
 # 설정 파일이 없거나 키가 빠져 있을 때 쓰는 내장 기본값.
-# API 엔드포인트/지점 코드는 조석예보 명세. 임계값은 현장 기준.
+# API 엔드포인트/지점 코드는 활용가이드 확정 명세(2026-08-06) 기준.
+# 임계값(threshold)만 현장 기준 미정으로 플레이스홀더 유지.
 DEFAULT_OPS = {
     'station_code': 'DT_0068',
     'station_name': '위도 (곰소만·변산 최근접 예보지점)',
@@ -63,7 +64,7 @@ DEFAULT_OPS = {
         'ground_elevation_m': None,  # 있으면 옛 공식과 공간 시각 중 이른 쪽
         'safety_margin_m': 0.3,
         'retreat_distance_m': 300,  # 지상고 경로 폴백. 공간 모델은 gps_home
-        'robot_max_speed_mps': 0.9742,
+        'robot_max_speed_mps': 0.7794,
         'robot_avg_speed_mps': 0.3,
         'time_buffer_min': 10,
         'spatial_margin_m': 20.0,
@@ -73,7 +74,7 @@ DEFAULT_OPS = {
 }
 
 # 플랫폼 선속도 상한. 철수 시간은 이 값을 넘기지 않는다.
-PLATFORM_MAX_SPEED_MPS = 0.9742  # D250 · G2.5 · 130 tick
+PLATFORM_MAX_SPEED_MPS = 0.7794  # D250 · G=2 · 130 tick
 
 _TIME_FORMATS = (
     '%Y-%m-%d %H:%M',
@@ -88,29 +89,53 @@ _TIME_FORMATS = (
 _PAGE_SIZE = 300
 
 
-# 전국 조위관측소 목록 (관측소 코드, 이름, 위도, 경도)
-# 주요 서해안 갯벌 지역 관측소 위주 + 전국 커버
+# 국립해양조사원 조위관측소 운영 현황 CSV(공공데이터포털) 공식 명칭·좌표.
+# DT_0001=인천, DT_0004=제주. 인천에 DT_0004 를 넣던 버그 재발 금지.
+# 수위선 256칸(갯벌 ≥50 ha) 중심의 공식 최근접을 빠짐없이 넣는다.
+# 대천·군산외항은 공식 명칭이 없음(대천 해역=보령, 군산외항=군산).
+STATION_SWITCH_MARGIN_M = 3000.0
 _TIDE_STATIONS = [
-    {"code": "DT_0068", "name": "위도", "lat": 35.6200, "lon": 126.2500},
-    {"code": "DT_0018", "name": "군산", "lat": 35.9833, "lon": 126.7000},
-    {"code": "DT_0001", "name": "인천", "lat": 37.45194, "lon": 126.59222},
-    {"code": "DT_0030", "name": "대천", "lat": 36.3500, "lon": 126.5167},
-    {"code": "DT_0043", "name": "목포", "lat": 34.7833, "lon": 126.3667},
-    {"code": "DT_0012", "name": "평택", "lat": 36.9833, "lon": 126.8000},
-    {"code": "DT_0045", "name": "완도", "lat": 34.3167, "lon": 126.7500},
-    {"code": "DT_0060", "name": "여수", "lat": 34.7333, "lon": 127.7333},
-    {"code": "DT_0035", "name": "군산외항", "lat": 35.9833, "lon": 126.5500},
-    {"code": "DT_0072", "name": "부산", "lat": 35.1000, "lon": 129.0333},
-    {"code": "DT_0004", "name": "제주", "lat": 33.5275, "lon": 126.54305},
-    {"code": "DT_0011", "name": "안흥", "lat": 36.6667, "lon": 126.1333},
-    {"code": "DT_0025", "name": "보령", "lat": 36.3333, "lon": 126.5167},
-    {"code": "DT_0055", "name": "통영", "lat": 34.8333, "lon": 128.4167},
-    {"code": "DT_0063", "name": "제주", "lat": 33.5167, "lon": 126.5333},
-    {"code": "DT_0058", "name": "고흥", "lat": 34.6167, "lon": 127.2833},
-    {"code": "DT_0038", "name": "장항", "lat": 36.0000, "lon": 126.6667},
-    {"code": "DT_0021", "name": "태안", "lat": 36.7500, "lon": 126.3000},
-    {"code": "DT_0028", "name": "서천", "lat": 36.0833, "lon": 126.7000},
-    {"code": "DT_0049", "name": "진도", "lat": 34.4833, "lon": 126.2667},
+    {"code": "DT_0068", "name": "위도", "lat": 35.61808444, "lon": 126.3018158},
+    {"code": "DT_0018", "name": "군산", "lat": 35.975556, "lon": 126.563056},
+    {"code": "DT_0001", "name": "인천", "lat": 37.451944, "lon": 126.592222},
+    {"code": "DT_0025", "name": "보령", "lat": 36.406389, "lon": 126.486111},
+    {"code": "DT_0007", "name": "목포", "lat": 34.779722, "lon": 126.375556},
+    {"code": "DT_0002", "name": "평택", "lat": 36.966944, "lon": 126.822778},
+    {"code": "DT_0027", "name": "완도", "lat": 34.315556, "lon": 126.759722},
+    {"code": "DT_0016", "name": "여수", "lat": 34.747222, "lon": 127.765556},
+    {"code": "DT_0005", "name": "부산", "lat": 35.096389, "lon": 129.035278},
+    {"code": "DT_0004", "name": "제주", "lat": 33.5275, "lon": 126.543056},
+    {"code": "DT_0067", "name": "안흥", "lat": 36.67463889, "lon": 126.1295556},
+    {"code": "DT_0014", "name": "통영", "lat": 34.827778, "lon": 128.434722},
+    {"code": "DT_0026", "name": "고흥발포", "lat": 34.481111, "lon": 127.342778},
+    {"code": "DT_0024", "name": "장항", "lat": 36.006944, "lon": 126.6875},
+    {"code": "DT_0050", "name": "태안", "lat": 36.91305556, "lon": 126.2388889},
+    {"code": "DT_0051", "name": "서천마량", "lat": 36.12888889, "lon": 126.4952778},
+    {"code": "DT_0028", "name": "진도", "lat": 34.377778, "lon": 126.308611},
+    {"code": "DT_0003", "name": "영광", "lat": 35.426111, "lon": 126.420556},
+    {"code": "DT_0008", "name": "안산", "lat": 37.192222, "lon": 126.647222},
+    {"code": "DT_0017", "name": "대산", "lat": 37.0075, "lon": 126.352778},
+    {"code": "DT_0021", "name": "추자도", "lat": 33.961944, "lon": 126.300278},
+    {"code": "DT_0029", "name": "거제도", "lat": 34.801389, "lon": 128.699167},
+    {"code": "DT_0032", "name": "강화대교", "lat": 37.731944, "lon": 126.522222},
+    {"code": "DT_0035", "name": "흑산도", "lat": 34.684167, "lon": 125.435556},
+    {"code": "DT_0037", "name": "어청도", "lat": 36.117222, "lon": 125.984722},
+    {"code": "DT_0038", "name": "굴업도", "lat": 37.194444, "lon": 125.995},
+    {"code": "DT_0043", "name": "영흥도", "lat": 37.23861111, "lon": 126.4286111},
+    {"code": "DT_0044", "name": "영종대교", "lat": 37.545556, "lon": 126.584444},
+    {"code": "DT_0049", "name": "광양", "lat": 34.903672, "lon": 127.754836},
+    {"code": "DT_0052", "name": "인천송도", "lat": 37.33805556, "lon": 126.5861111},
+    {"code": "DT_0055", "name": "순천만", "lat": 34.88411111, "lon": 127.5125556},
+    {"code": "DT_0056", "name": "부산항신항", "lat": 35.0775, "lon": 128.786944},
+    {"code": "DT_0058", "name": "경인항", "lat": 37.560833, "lon": 126.601111},
+    {"code": "DT_0061", "name": "삼천포", "lat": 34.924167, "lon": 128.069722},
+    {"code": "DT_0062", "name": "마산", "lat": 35.1975, "lon": 128.576389},
+    {"code": "DT_0063", "name": "가덕도", "lat": 35.024178, "lon": 128.810933},
+    {"code": "DT_0065", "name": "덕적도", "lat": 37.226333, "lon": 126.156556},
+    {"code": "DT_0066", "name": "향화도", "lat": 35.167667, "lon": 126.359556},
+    {"code": "DT_0092", "name": "여호항", "lat": 34.661944, "lon": 127.469167},
+    {"code": "DT_0093", "name": "소무의도", "lat": 37.373069, "lon": 126.440066},
+    {"code": "DT_0094", "name": "서거차도", "lat": 34.25142222, "lon": 125.91545},
 ]
 
 
@@ -140,6 +165,53 @@ def find_nearest_station(lat, lon):
     return best
 
 
+def _station_by_code(code):
+    """코드로 관측소 dict. 없으면 None."""
+    want = str(code or '').strip()
+    if not want:
+        return None
+    for station in _TIDE_STATIONS:
+        if station['code'] == want:
+            return dict(station)
+    return None
+
+
+def pick_station_sticky(
+        lat, lon, current_code='', margin_m=STATION_SWITCH_MARGIN_M):
+    """최근접 관측소. 현재 코드가 있으면 margin_m 이상 더 가까울 때만 전환.
+
+    반환에 switched=True/False. 관측소가 없으면 None.
+    """
+    nearest = find_nearest_station(lat, lon)
+    if nearest is None:
+        return None
+    current_code = str(current_code or '').strip()
+    if current_code == nearest['code']:
+        out = dict(nearest)
+        out['switched'] = False
+        return out
+    current = _station_by_code(current_code)
+    if current is None:
+        out = dict(nearest)
+        out['switched'] = True
+        return out
+    try:
+        margin = float(margin_m)
+    except (TypeError, ValueError):
+        margin = STATION_SWITCH_MARGIN_M
+    if not math.isfinite(margin) or margin < 0.0:
+        margin = STATION_SWITCH_MARGIN_M
+    d_cur = haversine_distance(lat, lon, current['lat'], current['lon'])
+    if nearest['distance_m'] + margin < d_cur:
+        out = dict(nearest)
+        out['switched'] = True
+        return out
+    out = dict(current)
+    out['distance_m'] = round(d_cur, 1)
+    out['switched'] = False
+    return out
+
+
 def get_stations():
     """관측소 목록 전체를 반환한다."""
     return list(_TIDE_STATIONS)
@@ -149,6 +221,7 @@ def get_stations():
 _SITE_STATION_CODE = {
     'incheon': 'DT_0001',
     'gomso': 'DT_0068',
+    'jeju': 'DT_0004',
 }
 
 

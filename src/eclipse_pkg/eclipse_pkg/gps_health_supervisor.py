@@ -36,43 +36,108 @@ from rclpy.qos import (
 )
 from rclpy.time import Time
 from sensor_msgs.msg import NavSatFix
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Empty, String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
 
-# lifecycle active만으로는 주행 불가. GPS 유입 후 map->base_link 가 있어야 READY.
+from eclipse_pkg.gps_fix_gate_node import GPS_FIX_QOS
+from eclipse_pkg.heading_calibration_node import CALIBRATION_DONE_QOS
+
+# ===========================================================================
+# NAVIGATION READINESS
+# ===========================================================================
+# Nav2's lifecycle "active" means the servers are CONFIGURED, not that the
+# robot can drive. All three costmap/controller servers run with
+# global_frame: map and happily reach 'active' while the map frame does not
+# exist at all, so `Managed nodes are active` reads as healthy right up until
+# a goal fails six steps downstream. This topic exposes the readiness chain
+# that lifecycle state hides:
+#
+#   bootstrap creep -> GPS displacement -> heading_calibration_node yaw align
+#     -> /heading_calibration/done latch -> gps_fix_gate opens
+#     -> /gps/fix_gated -> navsat_transform -> EKF map->odom -> map->base_link
+#
+# We publish the FIRST unmet link, not a bare boolean, because every stage
+# fails for a different reason and the operator needs to know which one.
+#
+# Deliberately NOT latched (VOLATILE, periodic): a TRANSIENT_LOCAL latch
+# obliges its publisher to stay alive to serve late joiners, which is exactly
+# why heading_calibration_bootstrap_node has no failure topic. This host node
+# lives for the whole session anyway, and periodic publication carries
+# liveness information a latch cannot.
 READINESS_TOPIC = '/navigation/readiness'
 
-# How long /gps/fix may go quiet before readiness reports stalled. 조정가능.
+# How long /gps/fix_gated may go quiet before we call the gate stage unmet.
+# The gate republishes /gps/fix at its source rate (~5 Hz), so this is
+# generous by design — it should only trip on a real stall. 조정가능.
 GATED_FIX_STALE_SEC = 3.0
 
 
 def evaluate_navigation_readiness(
-    fix_age_sec: float | None,
+    heading_done: bool,
+    heading_wait_sec: float,
+    gated_fix_age_sec: float | None,
     map_tf_available: bool,
-    fix_stale_sec: float = GATED_FIX_STALE_SEC,
+    gated_fix_stale_sec: float = GATED_FIX_STALE_SEC,
     tf_detail: str = '',
 ) -> tuple[str, str]:
     """Describe whether the robot can navigate, and if not, what is missing.
 
-    Order: GPS fix flowing, then map->base_link.
-    """
-    if fix_age_sec is None:
-        return 'GPS_SILENT', 'BLOCKED: no /gps/fix yet'
+    Kept a pure function (no rclpy) so the stage ordering is testable
+    directly, the way gps_fix_gate_node.gate_should_pass() is.
 
-    if fix_age_sec > fix_stale_sec:
-        return 'GPS_STALLED', (
-            f'BLOCKED: /gps/fix stopped {fix_age_sec:.0f}s ago'
+    The chain is walked STRICTLY IN ORDER and READY is only reached at the
+    end. In particular a resolvable map->base_link is NOT on its own enough.
+    An earlier revision short-circuited to READY the moment the transform
+    resolved, reasoning that a false BLOCKED would deny driving a robot that
+    can drive. Live data on 2026-08-12 disproved it: ekf_filter_node runs
+    with world_frame: map, so it publishes map->odom regardless of GPS, and
+    map->base_link resolved 56 s BEFORE heading calibration completed. The
+    transform existed while the map frame's yaw datum was still the arbitrary
+    boot-time IMU heading — exactly the error gps_fix_gate_node and
+    heading_calibration_node exist to prevent. Driving on that datum sends
+    the robot in the wrong direction, which is worse than not driving, so
+    transform existence is necessary here but never sufficient.
+
+    :param heading_done: /heading_calibration/done has been received.
+    :param heading_wait_sec: seconds spent waiting for that latch so far.
+    :param gated_fix_age_sec: age of the newest /gps/fix_gated, or None if
+        none has ever arrived.
+    :param map_tf_available: map->base_link resolves in the TF buffer.
+    :param gated_fix_stale_sec: age above which the gated fix counts as
+        stopped rather than flowing.
+    :param tf_detail: tf2's own explanation, when it has one.
+    :return: (stage, text). stage is a stable identifier safe to compare
+        across ticks; text is the human-readable single-line status.
+    """
+    if not heading_done:
+        return 'HEADING', (
+            'BLOCKED: heading not calibrated '
+            f'(no /heading_calibration/done for {heading_wait_sec:.0f}s) '
+            '— bootstrap creep needs real GPS displacement; '
+            'robot may be on a stand'
+        )
+
+    if gated_fix_age_sec is None:
+        return 'GATE_SILENT', (
+            'BLOCKED: gate open but no /gps/fix_gated has ever arrived '
+            '— check GPS_node and gps_fix_gate_node'
+        )
+
+    if gated_fix_age_sec > gated_fix_stale_sec:
+        return 'GATE_STALLED', (
+            'BLOCKED: gate open but /gps/fix_gated stopped '
+            f'{gated_fix_age_sec:.0f}s ago — GPS driver or gate stalled'
         )
 
     if not map_tf_available:
         detail = f' ({tf_detail})' if tf_detail else ''
         return 'MAP_TF', (
-            'BLOCKED: GPS flowing but no map->base_link yet'
-            f'{detail}'
+            'BLOCKED: gated fix flowing but no map->base_link yet'
+            f'{detail} — navsat_transform/EKF has not produced map->odom'
         )
 
-    return 'READY', 'READY: map->base_link available'
+    return 'READY', 'READY: map->base_link available on a calibrated datum'
 
 
 def should_start_tide_return(
@@ -114,7 +179,7 @@ class GpsHealthSupervisor(Node):
         self.declare_parameter('home_yaw', 0.0)
         self.declare_parameter('recover_service', '/gps/recover')
         self.declare_parameter('cancel_service', '/navigation/cancel')
-        self.declare_parameter('fix_stale_sec', GATED_FIX_STALE_SEC)
+        self.declare_parameter('gated_fix_stale_sec', GATED_FIX_STALE_SEC)
         self.declare_parameter('retreat_topic', '/mission/retreat')
         self.declare_parameter('home_pose_topic', '/mission/home_pose')
 
@@ -131,8 +196,8 @@ class GpsHealthSupervisor(Node):
         self.home_yaw = float(self.get_parameter('home_yaw').value)
         self.recover_service = str(self.get_parameter('recover_service').value)
         self.cancel_service = str(self.get_parameter('cancel_service').value)
-        self.fix_stale_sec = float(
-            self.get_parameter('fix_stale_sec').value
+        self.gated_fix_stale_sec = float(
+            self.get_parameter('gated_fix_stale_sec').value
         )
 
         fix_qos = QoSProfile(
@@ -145,6 +210,22 @@ class GpsHealthSupervisor(Node):
             str(self.get_parameter('fix_topic').value),
             self._fix_cb,
             fix_qos,
+        )
+
+        # Readiness-chain inputs. Both subscriptions are cheap: the done
+        # latch delivers once and never again, and the gated fix callback
+        # only stamps a clock (we never touch the payload).
+        self.create_subscription(
+            Empty,
+            '/heading_calibration/done',
+            self._calibration_done_cb,
+            CALIBRATION_DONE_QOS,
+        )
+        self.create_subscription(
+            NavSatFix,
+            '/gps/fix_gated',
+            self._gated_fix_cb,
+            GPS_FIX_QOS,
         )
 
         self.tf_buffer = Buffer()
@@ -163,6 +244,9 @@ class GpsHealthSupervisor(Node):
         self.state_pub = self.create_publisher(String, '/gps/health_state', 10)
         self.readiness_pub = self.create_publisher(String, READINESS_TOPIC, 10)
 
+        self._node_started_mono = time.monotonic()
+        self._calibration_done = False
+        self._last_gated_fix_mono = None
         self._last_readiness = None
 
         self._last_fix_msg = None
@@ -216,12 +300,21 @@ class GpsHealthSupervisor(Node):
         if not self._home_locked and self._fix_ok(msg):
             self._try_capture_home()
 
+    def _calibration_done_cb(self, _msg):
+        self._calibration_done = True
+
+    def _gated_fix_cb(self, _msg):
+        # Payload is irrelevant here — /gps/fix quality is already judged in
+        # _fix_cb. What this stage answers is whether the gate is actually
+        # passing traffic downstream to navsat_transform.
+        self._last_gated_fix_mono = time.monotonic()
+
     def _publish_readiness(self):
         now = time.monotonic()
-        fix_age = (
+        gated_age = (
             None
-            if self._last_fix_mono is None
-            else now - self._last_fix_mono
+            if self._last_gated_fix_mono is None
+            else now - self._last_gated_fix_mono
         )
         available, tf_detail = self.tf_buffer.can_transform(
             self.home_frame,
@@ -230,9 +323,11 @@ class GpsHealthSupervisor(Node):
             return_debug_tuple=True,
         )
         stage, text = evaluate_navigation_readiness(
-            fix_age_sec=fix_age,
+            heading_done=self._calibration_done,
+            heading_wait_sec=now - self._node_started_mono,
+            gated_fix_age_sec=gated_age,
             map_tf_available=bool(available),
-            fix_stale_sec=self.fix_stale_sec,
+            gated_fix_stale_sec=self.gated_fix_stale_sec,
             tf_detail=str(tf_detail or '').strip(),
         )
 
@@ -464,7 +559,13 @@ class GpsHealthSupervisor(Node):
         fresh = self._fix_fresh()
 
         if self._phase == Phase.OK:
-            # 첫 fix 전은 상실이 아니라 미개시. 상실로 보면 기동마다 navigation_stop이 걸린다.
+            # 아직 fix 를 한 번도 못 받은 것은 "상실"이 아니라 "미개시"다. 컨테이너
+            # 기동 직후 GPS 드라이버가 첫 메시지를 내기까지 수 초가 걸리는데, 그
+            # 구간을 상실로 판정하면 매 기동마다 오경보가 나고 _cancel_navigation()
+            # 이 /drive/navigation_stop 을 True 로 걸어버린다. 2026-08-12 라이브에서
+            # 실제로 이 오경보가 heading_calibration_bootstrap 의 창정렬 주행을
+            # 시작 0.1 초 만에 중단시켰다(복구 후에도 stop 이 남은 경합은 별건).
+            # 이 구간에는 아직 아무것도 주행하지 않으므로 대기가 곧 안전한 상태다.
             if self._last_fix_mono is None:
                 return
             if not fresh:

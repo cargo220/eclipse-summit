@@ -18,6 +18,8 @@ import math
 import numpy as np
 
 from eclipse_pkg.tide_waterline import (
+    WATERLINE_STITCH_M,
+    WINDOW_BORDER_PAD_M,
     _as_line,
     _coast_line_parts,
     _explode_polygons,
@@ -28,6 +30,8 @@ from eclipse_pkg.tide_waterline import (
     _valid_polygon,
     _window_box,
     _xy_pair,
+    coast_along_mud_rings,
+    drop_window_border_segments,
 )
 
 DEFAULT_CELL_M = 10.0
@@ -40,6 +44,10 @@ DEFAULT_MIN_CLOSED_AREA_M2 = 0.0
 _CLOSED_TOL_M = 30.0
 _BLOCK = 1.0e12
 _MAX_CELLS = 9_000_000
+# 창 안 C 씨앗이 이보다 적고 섬 해안을 버렸으면 되돌린다 (#13).
+_MIN_C_SEED_CELLS = 150
+# 등고선 accept 실패를 이 칸까지는 끊지 않고 건너뛴다.
+_ACCEPT_SKIP_CELLS = 2
 
 
 def _positive(value, default):
@@ -375,13 +383,18 @@ def build_width_grid(
     cell = _positive(cell_m, DEFAULT_CELL_M)
     clear_m = _positive(coast_clear_m, DEFAULT_COAST_CLEAR_M)
     mud = _polys(mud_polys)
-    coast = filter_major_coast(
-        _coast_parts(coast_geoms),
+    coast_raw = _coast_parts(coast_geoms)
+    coast_major = filter_major_coast(
+        coast_raw,
         min_closed_len_m=min_closed_len_m,
         min_closed_area_m2=min_closed_area_m2)
     if origin_xy is not None and radius_m is not None:
         mud = _intersect_window(mud, origin_xy, radius_m)
-        coast = _intersect_window(coast, origin_xy, radius_m)
+        coast_raw = _intersect_window(coast_raw, origin_xy, radius_m)
+        coast_major = _intersect_window(coast_major, origin_xy, radius_m)
+    # α=1 은 창 안 해안 전부. C 씨앗은 작은 섬을 뺀 뒤, 너무 적으면 되돌림.
+    coast_alpha1 = list(coast_raw)
+    coast = list(coast_major) if coast_major else list(coast_raw)
     if not mud or not coast:
         return None
     bounds = _grid_bounds(mud + coast, cell * 4.0)
@@ -399,12 +412,29 @@ def build_width_grid(
     mud_mask = np.zeros((nrows, ncols), dtype=bool)
     coast_mask = np.zeros((nrows, ncols), dtype=bool)
     _rasterize_polys(mud_mask, mud, xmin, ymin, cell)
-    _rasterize_lines(coast_mask, coast, xmin, ymin, cell)
-    if not mud_mask.any() or not np.logical_and(coast_mask, mud_mask).any():
-        # 해안이 갯벌 칸에 안 겹치면 한 칸 팽창해서 붙인다.
-        from scipy.ndimage import binary_dilation
-        coast_mask = np.logical_and(
-            binary_dilation(coast_mask, iterations=2), mud_mask)
+
+    def _paint_coast(lines):
+        mask = np.zeros((nrows, ncols), dtype=bool)
+        _rasterize_lines(mask, lines, xmin, ymin, cell)
+        if not np.logical_and(mask, mud_mask).any():
+            from scipy.ndimage import binary_dilation
+            mask = np.logical_and(
+                binary_dilation(mask, iterations=2), mud_mask)
+        return mask
+
+    coast_mask = _paint_coast(coast)
+    n_c = int(np.logical_and(coast_mask, mud_mask).sum())
+    if (
+        n_c < _MIN_C_SEED_CELLS
+        and len(coast_alpha1) > len(coast)
+    ):
+        print(
+            f'width-grid restore C coasts {len(coast)}→{len(coast_alpha1)} '
+            f'(seeds={n_c}<{_MIN_C_SEED_CELLS})',
+            flush=True)
+        coast = list(coast_alpha1)
+        coast_mask = _paint_coast(coast)
+        n_c = int(np.logical_and(coast_mask, mud_mask).sum())
     if not mud_mask.any() or not np.logical_and(coast_mask, mud_mask).any():
         return None
     from scipy.ndimage import distance_transform_edt
@@ -419,7 +449,6 @@ def build_width_grid(
         return None
     if not l_full_mask.any():
         l_full_mask = l_mask
-    n_c = int(np.logical_and(coast_mask, mud_mask).sum())
     print(
         f'width-grid geodesic C seeds={n_c} L seeds={int(l_mask.sum())} '
         f'L_full={int(l_full_mask.sum())}',
@@ -449,7 +478,11 @@ def build_width_grid(
         'xmin': xmin,
         'ymin': ymin,
         'cell': cell,
+        'ncols': ncols,
+        'nrows': nrows,
+        'border': border,
         'coast_geoms': coast,
+        'coast_alpha1': coast_alpha1,
         'mud': mud,
         'clear_m': clear_m,
     }
@@ -574,6 +607,7 @@ def _contours_to_rings(contours, xmin, ymin, cell, min_len_m, accept=None):
 
     for contour in contours:
         current = []
+        skipped = 0
         for row, col in contour:
             if accept is not None:
                 ri = int(round(row))
@@ -583,14 +617,17 @@ def _contours_to_rings(contours, xmin, ymin, cell, min_len_m, accept=None):
                     and 0 <= ci < accept.shape[1]
                     and accept[ri, ci]
                 ):
-                    _flush(current)
-                    current = []
+                    skipped += 1
+                    if skipped > _ACCEPT_SKIP_CELLS:
+                        _flush(current)
+                        current = []
                     continue
+            skipped = 0
             x_val = xmin + (float(col) + 0.5) * cell
             y_val = ymin + (float(row) + 0.5) * cell
             current.append((x_val, y_val))
         _flush(current)
-    join_m = max(80.0, 8.0 * cell)
+    join_m = max(float(WATERLINE_STITCH_M), 8.0 * cell)
     return _stitch_polylines(lines, join_m=join_m)
 
 
@@ -632,9 +669,16 @@ def waterline_from_width_grid(grid, alpha, min_len_m=DEFAULT_MIN_LEN_M):
     min_len = _positive(min_len_m, DEFAULT_MIN_LEN_M)
     xmin = grid['xmin']
     ymin = grid['ymin']
+    nrows = int(grid.get('nrows') or grid['mud_mask'].shape[0])
+    ncols = int(grid.get('ncols') or grid['mud_mask'].shape[1])
+    aabb = (xmin, ymin, xmin + ncols * cell, ymin + nrows * cell)
+
+    def _clip_window(rings):
+        return drop_window_border_segments(
+            rings, aabb, pad_m=max(WINDOW_BORDER_PAD_M, 2.0 * cell))
+
     if weight <= 0.01:
         from shapely.geometry import box as shapely_box
-        nrows, ncols = grid['mud_mask'].shape
         window = shapely_box(
             xmin, ymin,
             xmin + ncols * cell, ymin + nrows * cell)
@@ -642,16 +686,22 @@ def waterline_from_width_grid(grid, alpha, min_len_m=DEFAULT_MIN_LEN_M):
             grid.get('mud'), grid.get('coast_geoms'),
             grid.get('clear_m', DEFAULT_COAST_CLEAR_M),
             min_len_m=min_len, window=window)
-        if rings:
-            return rings
-        full = grid.get('l_full_mask')
-        if full is None or not np.any(full):
-            full = grid['l_mask']
-        return _mask_to_rings(full, xmin, ymin, cell, min_len)
+        if not rings:
+            full = grid.get('l_full_mask')
+            if full is None or not np.any(full):
+                full = grid['l_mask']
+            rings = _mask_to_rings(full, xmin, ymin, cell, min_len)
+        return _clip_window(rings)
     if weight >= 0.99:
-        return _coast_near_mud(
-            grid.get('coast_geoms'), grid.get('mud'),
-            max(min_len, 200.0), near_m=80.0)
+        coasts = grid.get('coast_alpha1') or grid.get('coast_geoms')
+        rings = coast_along_mud_rings(
+            coasts, grid.get('mud'),
+            near_m=80.0, min_len_m=min_len,
+            join_m=WATERLINE_STITCH_M)
+        if rings:
+            return _clip_window(rings)
+        return _clip_window(_coast_near_mud(
+            coasts, grid.get('mud'), min_len, near_m=80.0))
     try:
         from skimage.measure import find_contours
     except ImportError:
@@ -663,9 +713,14 @@ def waterline_from_width_grid(grid, alpha, min_len_m=DEFAULT_MIN_LEN_M):
         contours = find_contours(field, weight)
     except (ValueError, TypeError):
         return []
+    accept = grid['ok']
+    border = grid.get('border')
+    if border is not None:
+        accept = np.logical_and(accept, np.logical_not(border))
     rings = _contours_to_rings(
-        contours, xmin, ymin, cell, min_len, accept=grid['ok'])
-    return drop_closed_interior_blobs(rings, grid.get('coast_geoms'))
+        contours, xmin, ymin, cell, min_len, accept=accept)
+    rings = drop_closed_interior_blobs(rings, grid.get('coast_geoms'))
+    return _clip_window(rings)
 
 
 def waterline_width_rings(

@@ -73,9 +73,23 @@
     <origin xyz="0.27 0 0.05" rpy="0 0 0"/>
   </joint>
 
-  <!-- IMU / GPS 장착 위치. 실물 실측으로 검증되지 않았다.
-       틀려도 에러 없이 위치추정만 어긋난다.
-       확인: ros2 run tf2_ros tf2_echo base_link imu_link (및 gps_link) -->
+  <!-- ==================================================================
+       IMU / GPS 장착 위치 (2026-08-11 이관)
+
+       이전에는 description.launch.py가 static_transform_publisher 프로세스
+       두 개를 따로 띄워 발행하던 값이다. /tf_static 은 TRANSIENT_LOCAL 이라
+       발행자가 살아있어야 늦게 뜬 노드도 값을 받을 수 있어서, 프로세스를
+       그냥 죽일 수는 없었다. 대신 이미 상시 가동 중인 robot_state_publisher
+       에게 래치를 넘기는 방식으로 프로세스 2개를 없앴다 (URDF 의 fixed joint
+       는 자동으로 /tf_static 으로 발행된다).
+
+       ⚠️ 아래 수치는 기존 launch 값을 그대로 옮겨온 것이며 실물 실측으로
+       검증된 값이 아니다. **base_link 원점에서 각 센서까지의 거리를 자로
+       정확히 재서 반드시 확인할 것.** 이 값이 틀려도 에러는 나지 않는다 —
+       EKF 와 navsat_transform 이 센서 값을 로봇 중심 기준으로 환산할 때
+       조용히 어긋나서, 위치추정이 원인 불명으로 나빠지는 형태로만 드러난다.
+       검증 방법: ros2 run tf2_ros tf2_echo base_link imu_link (및 gps_link)
+       ================================================================== -->
 
   <link name="imu_link"/>
 

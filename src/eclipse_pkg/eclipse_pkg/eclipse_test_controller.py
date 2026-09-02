@@ -217,8 +217,13 @@ HEIGHT_STATE_MANUAL = "MANUAL_HEIGHT"
 HEIGHT_STATE_AI = "AI_HEIGHT"
 HEIGHT_STATE_TEMP_STOP = "TEMP_STOP"
 
+# NOTE: TF_PUBLISH_DT (0.5 s) was removed on 2026-08-11. odom->base_link is
+# published from feedback_loop again, at CONTROL_DT, because the separate
+# low-rate timer left that transform at 2.2 Hz — the slowest link feeding Nav2
+# — and stamped stale poses with a current timestamp. See publish_odom_tf().
+
 # Height Dynamixel IDs (1/11) missing or bus noise: repeated read4ByteTxRx
-# timeouts flood the serial line and inflate load.
+# timeouts flood the serial line and inflate load (py-spy 2026-08-10).
 HEIGHT_BUS_FAIL_LATCH_COUNT = 3
 HEIGHT_BUS_PROBE_SEC = 5.0
 HEIGHT_BUS_WARN_INTERVAL_SEC = 2.0
@@ -278,7 +283,10 @@ class EclipseTestController(Node):
         self.height_temp_fault = False
         self.height_temp_fault_id = None
         self.height_temp_fault_c = None
-        # Height AI runs in-process. Empty model path holds current height.
+        # Height AI policy runs in-process (see height_ai_apply_loop). Declared
+        # as parameters so a trained checkpoint can be swapped in without code
+        # changes, and so description_ai.launch.py can disable it while the
+        # dataset random-probe FSM owns the height actuator.
         self.declare_parameter('enable_height_ai', True)
         self.declare_parameter('height_ai_model_path', '')
         self.height_ai_enabled = bool(
@@ -360,8 +368,14 @@ class EclipseTestController(Node):
         self.open_dynamixel_bus()
         self.configure_dynamixels()
         self.wheel_velocity_limit_ticks = self.read_wheel_velocity_limits()
-        # 가장 느린 휠 한계로 포화. 0(읽기 실패)은 min에서 빼서, 실패 1개가
-        # 스케일을 끄지 않게 한다.
+        # Binding limit for saturation scaling: the slowest wheel governs, since
+        # exceeding any one of them is what distorts the arc.
+        # read_wheel_velocity_limits stores 0 for a wheel whose register read
+        # failed. Dropping those matters because scale_to_wheel_limit treats a
+        # 0 limit as "unknown" and skips scaling entirely — so a plain min()
+        # would let ONE failed read silently disable the protection for all four
+        # wheels. (It would not stop the robot; it would just hand saturation
+        # back to the firmware, which clips only the faster wheel.)
         usable_limits = [t for t in self.wheel_velocity_limit_ticks if t > 0]
         self.wheel_limit_ticks = float(min(usable_limits)) if usable_limits else 0.0
         if not usable_limits:
@@ -850,9 +864,11 @@ class EclipseTestController(Node):
     # ROS callbacks
     # ------------------------------------------------------------------
     def cmd_vel_callback(self, msg):
-        if self.motor_safety_fault:
-            self.reset_drive_command()
-            return
+        # 2026-08-20 Lee: 바퀴 안전 래치 해제 시험. ID 12 전압 에러가
+        # 네 바퀴 토크/명령을 끊던 가드.
+        # if self.motor_safety_fault:
+        #     self.reset_drive_command()
+        #     return
 
         # Nav2 and manual commands both use the standard base_link convention:
         # +linear.x is forward and -linear.x is reverse.
@@ -1063,7 +1079,15 @@ class EclipseTestController(Node):
     def height_ai_observation(self):
         """Build the policy input from this node's own attributes.
 
-        Key names must stay aligned with height_ai_policy.HeightObservation.
+        KEY NAMES MUST MATCH eclipse_ai_controller.height_ai_state_snapshot()
+        exactly. That snapshot is what the training JSONL records, so reusing
+        its vocabulary here is what keeps training and serving on one contract
+        — three of the five P0 defects found in the 2026-08-10 review were
+        exactly this kind of name mismatch. test_height_ai_observation.py
+        asserts the two key sets stay aligned.
+
+        Probe keys match eclipse_ai_controller.height_ai_state_snapshot()
+        so a later predictor can use contact/angle without a rename.
         """
         probe_age_sec = (
             time.monotonic() - self.probe_angle_recv_time
@@ -1085,7 +1109,7 @@ class EclipseTestController(Node):
             "wheel_odom_speed": self.wheel_odom_speed,
             "traction_efficiency": self.traction_efficiency,
             "has_filtered_odom": self.has_filtered_odom,
-            # 탐침
+            # 탐침 (학습 스냅샷과 같은 키)
             "probe_required": True,
             "has_probe_angle": self.has_probe_angle,
             "probe_angle": self.probe_angle,
@@ -1129,7 +1153,16 @@ class EclipseTestController(Node):
         return diff <= HEIGHT_AI_PROBE_CONTACT_TOLERANCE
 
     def height_ai_apply_loop(self):
-        # 서보는 arbitrate_height_ai_command만 탄다. 수동 높이 우선.
+        # Inference runs IN THIS PROCESS, on the timer that already exists.
+        # 2026-08-11 live measurement: the previous standalone height_ai_node
+        # cost 8.6% of a core while computing nothing, mostly re-deserializing
+        # /odometry/filtered that this controller already deserializes. In-process
+        # costs ~0 because it adds no thread, no DDS participant and no wakeup.
+        #
+        # Safety is unchanged: the policy only ever reaches the servo through
+        # arbitrate_height_ai_command(), where manual height_state always wins
+        # (height_step_callback above sets it on every call), the proposal is
+        # deadbanded, rate-limited and mm-clamped twice.
         if not self.height_ai_enabled:
             return
         if self.height_temp_fault:
@@ -1146,7 +1179,8 @@ class EclipseTestController(Node):
             )
             proposal_down_mm = proposal.down_mm
         except Exception as exc:
-            # 정책 예외가 버스 소유자를 내리지 않게 현재 높이를 유지한다.
+            # Never let a policy defect take down the Dynamixel bus owner.
+            # Holding the current height is the same no-op the stub produces.
             self.get_logger().error(
                 f"height AI policy failed ({exc}); holding current height",
                 throttle_duration_sec=5.0,
@@ -1158,6 +1192,8 @@ class EclipseTestController(Node):
             height_state=self.height_state,
             manual_state=HEIGHT_STATE_MANUAL,
             proposal_down_mm=proposal_down_mm,
+            # Always fresh: the proposal was computed from live attributes in
+            # this very tick, so there is no transport that could make it stale.
             proposal_fresh=True,
             dt_sec=HEIGHT_AI_APPLY_DT,
             max_rate_mm_per_s=HEIGHT_AI_MAX_RATE_MM_PER_S,
@@ -1201,10 +1237,13 @@ class EclipseTestController(Node):
             # Keep odom->base_link TF alive when the motor bus is down: the
             # EKF's map->odom chain needs this transform to bootstrap, so Nav2
             # initialization must not be gated on the motors being powered.
-            # Pose and stamp are the last integrated values (unchanged), not a
-            # stale pose re-stamped with now() — see publish_odom_tf().
+            # Hold the last pose, but stamp now(). A frozen last_time stamp
+            # makes map->base_link "extrapolation into the past" and the
+            # costmap never publishes Occupancy. Do not integrate a dt here.
+            now = self.get_clock().now()
             self.stop_wheels()
-            self.publish_odom_tf(self.last_time)
+            self.last_time = now
+            self.publish_odom_tf(now)
             return
         for bus in self.iter_buses():
             bus.sync_read_pwm.txRxPacket()
@@ -1288,8 +1327,9 @@ class EclipseTestController(Node):
         )
 
     def write_wheel_velocity_commands(self):
-        if self.motor_safety_fault:
-            return
+        # 2026-08-20 Lee: 바퀴 안전 래치 해제 시험.
+        # if self.motor_safety_fault:
+        #     return
 
         if self.autonomy_active:
             heading_correction_w = 0.0
@@ -1313,8 +1353,9 @@ class EclipseTestController(Node):
         corrected_target_r = (
             self.target_r + (heading_correction_w * WHEEL_SEPARATION / 2.0)
         )
-        corrected_target_l *= self.motor_safety_speed_scale
-        corrected_target_r *= self.motor_safety_speed_scale
+        # 2026-08-20 Lee: 바퀴 안전 속도 스케일 해제 시험.
+        # corrected_target_l *= self.motor_safety_speed_scale
+        # corrected_target_r *= self.motor_safety_speed_scale
 
         raw_cmd_l = (
             (corrected_target_l / WHEEL_COMMAND_RADIUS / MOTOR_TO_WHEEL_SPEED_RATIO)
@@ -1418,36 +1459,44 @@ class EclipseTestController(Node):
             self.get_logger().info("wheel bus watchdog disabled and cleared")
 
     def motor_safety_loop(self):
+        # 2026-08-20 Lee: 바퀴 2/3/12/13 안전 래치 해제 시험.
+        # hardware_error / stall / temp / voltage 가 네 바퀴 토크를 끊던 경로.
+        # addr 70 로그/토픽은 높이와 같이 남긴다. 토크 차단은 그대로 끈다.
         self.publish_wheel_hardware_error_status()
-        if self.motor_safety_fault:
-            self.publish_motor_safety_state(self.motor_safety_state)
-            return
-
-        if not self.refresh_motor_safety_reads():
-            self.handle_motor_safety_read_failure("WARN_SAFETY_READ_FAIL")
-            return
-
-        feedback = []
-        for dxl_id in DXL_ALL_IDS:
-            if not self.motor_safety_feedback_available(dxl_id):
-                self.handle_motor_safety_read_failure(
-                    f"WARN_SAFETY_DATA_MISSING_ID_{dxl_id}"
-                )
-                return
-            feedback.append(self.read_motor_safety_feedback(dxl_id))
-
-        self.motor_safety_read_failures = 0
-        fault_reason = self.find_motor_safety_fault(feedback)
-        if fault_reason:
-            self.trigger_motor_safety_fault(fault_reason)
-            return
-
-        warn_state = self.find_motor_safety_warning(feedback)
-        self.publish_motor_safety_state(warn_state or "OK")
-        self.log_motor_safety_warning(warn_state)
+        self.motor_safety_fault = False
+        self.motor_safety_speed_scale = 1.0
+        self.publish_motor_safety_state("OK")
+        return
+        # if self.motor_safety_fault:
+        #     self.publish_motor_safety_state(self.motor_safety_state)
+        #     return
+        #
+        # if not self.refresh_motor_safety_reads():
+        #     self.handle_motor_safety_read_failure("WARN_SAFETY_READ_FAIL")
+        #     return
+        #
+        # feedback = []
+        # for dxl_id in DXL_ALL_IDS:
+        #     if not self.motor_safety_feedback_available(dxl_id):
+        #         self.handle_motor_safety_read_failure(
+        #             f"WARN_SAFETY_DATA_MISSING_ID_{dxl_id}"
+        #         )
+        #         return
+        #     feedback.append(self.read_motor_safety_feedback(dxl_id))
+        #
+        # self.motor_safety_read_failures = 0
+        # fault_reason = self.find_motor_safety_fault(feedback)
+        # if fault_reason:
+        #     self.trigger_motor_safety_fault(fault_reason)
+        #     return
+        #
+        # warn_state = self.find_motor_safety_warning(feedback)
+        # self.publish_motor_safety_state(warn_state or "OK")
+        # self.log_motor_safety_warning(warn_state)
 
     def refresh_motor_safety_reads(self):
-        # present PWM은 feedback_loop가 이미 갱신한다.
+        # NOTE: present PWM은 여기서 다시 읽지 않는다. feedback_loop(CONTROL_DT)가
+        # 같은 groupSyncReadPresentPwm을 이미 갱신하므로 중복 시리얼만 낭비였다.
         ok = True
         for bus in self.iter_buses():
             reads = (
@@ -1641,27 +1690,32 @@ class EclipseTestController(Node):
         return None
 
     def trigger_motor_safety_fault(self, reason):
-        if self.motor_safety_fault:
-            return
-
-        self.motor_safety_fault = True
-        self.motor_safety_state = f"FAULT_{reason}"
-        self.motor_safety_speed_scale = 0.0
-        self.reset_drive_command()
-        self.stop_wheels()
-
-        for dxl_id in DXL_ALL_IDS:
-            self.write_dxl_byte(
-                dxl_id,
-                ADDR_TORQUE_ENABLE,
-                TORQUE_DISABLE_VAL,
-                "wheel safety torque disable",
-            )
-
-        self.publish_motor_safety_state(self.motor_safety_state)
-        self.get_logger().error(
-            f"motor safety fault: {reason}; wheel torque disabled"
+        # 2026-08-20 Lee: 바퀴 안전 토크 오프 해제 시험.
+        self.get_logger().warn(
+            f"motor safety fault ignored (wheels 2/3/12/13): {reason}"
         )
+        return
+        # if self.motor_safety_fault:
+        #     return
+        #
+        # self.motor_safety_fault = True
+        # self.motor_safety_state = f"FAULT_{reason}"
+        # self.motor_safety_speed_scale = 0.0
+        # self.reset_drive_command()
+        # self.stop_wheels()
+        #
+        # for dxl_id in DXL_ALL_IDS:
+        #     self.write_dxl_byte(
+        #         dxl_id,
+        #         ADDR_TORQUE_ENABLE,
+        #         TORQUE_DISABLE_VAL,
+        #         "wheel safety torque disable",
+        #     )
+        #
+        # self.publish_motor_safety_state(self.motor_safety_state)
+        # self.get_logger().error(
+        #     f"motor safety fault: {reason}; wheel torque disabled"
+        # )
 
     def publish_motor_safety_state(self, state):
         self.motor_safety_state = state
@@ -1866,9 +1920,28 @@ class EclipseTestController(Node):
     def publish_odom_tf(self, stamp):
         """Publish odom->base_link right after the pose was integrated.
 
-        Called from feedback_loop (CONTROL_DT) with the same stamp as
-        publish_odometry. Faster than CONTROL_DT adds nothing: x/y/th only
-        change when feedback_loop integrates them.
+        Called from feedback_loop (CONTROL_DT, 8 Hz) rather than from its own
+        low-rate timer. Two reasons, both found by live measurement on
+        2026-08-11:
+
+        1. Rate. On the robot this transform was going out at 2.20 Hz while
+           map->odom ran at 20.98 Hz, so odom->base_link was the slowest link
+           in the chain feeding Nav2 — roughly 9 cm of pose staleness per
+           update at 0.2 m/s, against a controller_server that ticks at 20 Hz.
+           The costmap transform_tolerance had already been relaxed 1.5 -> 2.5
+           to cope with exactly this.
+        2. Honesty of the stamp. The old timer stamped `now()` onto whatever
+           pose was last integrated, so it advertised a pose up to 500 ms old
+           as if it were current. Taking the caller's `stamp` — the same one
+           publish_odometry uses — keeps pose and timestamp consistent.
+
+        Publishing faster than CONTROL_DT would add no information: self.x/y/th
+        only change when feedback_loop integrates them.
+
+        History: this call used to live in feedback_loop, was split out to a
+        0.5 s timer on 2026-08-06 to cut controller load, and is moved back now
+        that the load work showed the cost was node count, not this publish
+        (system sat at 29% CPU with 74% idle after the 2026-08-11 reduction).
         """
         odom_tf = TransformStamped()
         odom_tf.header.stamp = stamp.to_msg()

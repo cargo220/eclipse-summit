@@ -157,6 +157,59 @@ def baked_keepout_tiles(tiles, tiles_dir):
     return out
 
 
+# launch keepout_site 가 이 이름이면 named JSON 을 안 열고 GPS 타일만 쓴다.
+# 빈 문자열은 ros2 launch 가 keepout_site:= 를 거부하므로 별도 토큰이 필요하다.
+GPS_TILE_SITE_ALIASES = frozenset({'tiles', 'gps', '_'})
+
+
+def normalize_keepout_site(site):
+    """keepout_site → named 맵 이름. tiles/gps/_ 와 빈 값은 GPS 타일."""
+    name = str(site or '').strip()
+    if not name or name.lower() in GPS_TILE_SITE_ALIASES:
+        return ''
+    return name
+
+
+def runtime_map_source(
+        keepout_site='', keepout_geojson='', waterline_steps_json='',
+        waterline_tiles_dir='', keepout_tiles_dir=''):
+    """런타임 맵 소스. forced_site | gps_tiles | empty.
+
+    keepout_site 또는 명시 파일 경로가 있으면 named 강제.
+    아니면 타일 디렉터리가 있으면 GPS 칸만. named 제부/인천 폴백 없음.
+    """
+    if (normalize_keepout_site(keepout_site)
+            or str(keepout_geojson or '').strip()
+            or str(waterline_steps_json or '').strip()):
+        return 'forced_site'
+    if (str(waterline_tiles_dir or '').strip()
+            or str(keepout_tiles_dir or '').strip()):
+        return 'gps_tiles'
+    return 'empty'
+
+
+def pick_baked_tile_path(
+        tiles, tiles_dir, east, north, current_id, kind='waterline'):
+    """GPS 칸에서 구운 파일 경로. 없으면 id/path 빈 값.
+
+    kind: waterline → waterline_steps.json, keepout → keepout.geojson.
+    tiles 는 이미 baked_* 로 걸러진 목록이어야 한다.
+    """
+    if east is None or north is None or not tiles or not tiles_dir:
+        return {'id': None, 'path': '', 'reason': 'no_gps_or_tiles'}
+    tile = lookup_tile_sticky(tiles, east, north, current_id)
+    if tile is None:
+        return {'id': None, 'path': '', 'reason': 'outside'}
+    tile_name = tile.get('id')
+    if kind == 'keepout':
+        path = tile_keepout_path(tiles_dir, tile_name)
+    else:
+        path = tile_steps_path(tiles_dir, tile_name)
+    if not path:
+        return {'id': None, 'path': '', 'reason': 'bad_id'}
+    return {'id': tile_name, 'path': path, 'reason': 'ok'}
+
+
 def neighbor_indices(ix, iy, ring=1):
     """중심 칸 포함, ring 칸까지 (2*ring+1)^2 인덱스."""
     span = int(ring)
@@ -167,6 +220,57 @@ def neighbor_indices(ix, iy, ring=1):
         for dy in range(-span, span + 1):
             out.append((int(ix) + dx, int(iy) + dy))
     return out
+
+
+def tile_by_id(tiles, tile_id_val):
+    """id 로 타일 dict. 없으면 None."""
+    want = str(tile_id_val or '')
+    if not want:
+        return None
+    for tile in tiles or ():
+        if tile.get('id') == want:
+            return tile
+    return None
+
+
+def neighbor_tile_records(tiles, tile_id_val, ring=1):
+    """해당 칸을 뺀 이웃 타일 dict 목록."""
+    current = tile_by_id(tiles, tile_id_val)
+    if current is None:
+        return []
+    try:
+        ix, iy = int(current['ix']), int(current['iy'])
+    except (KeyError, TypeError, ValueError):
+        return []
+    by_xy = {}
+    for tile in tiles or ():
+        try:
+            by_xy[(int(tile['ix']), int(tile['iy']))] = tile
+        except (KeyError, TypeError, ValueError):
+            continue
+    out = []
+    for n_ix, n_iy in neighbor_indices(ix, iy, ring=ring):
+        rec = by_xy.get((n_ix, n_iy))
+        if rec is None or rec.get('id') == current.get('id'):
+            continue
+        out.append(rec)
+    return out
+
+
+def pin_near_tile_edge(east, north, tile, margin_m=4000.0):
+    """핀이 타일 AABB 가장자리 margin 안이면 True."""
+    if not tile:
+        return False
+    try:
+        d_edge = min(
+            float(east) - float(tile['minx']),
+            float(tile['maxx']) - float(east),
+            float(north) - float(tile['miny']),
+            float(tile['maxy']) - float(north))
+        margin = float(margin_m)
+    except (KeyError, TypeError, ValueError):
+        return False
+    return math.isfinite(d_edge) and d_edge <= margin
 
 
 def list_mud_tiles(mud_polys, window_m=DEFAULT_WINDOW_M, step_m=DEFAULT_STEP_M,

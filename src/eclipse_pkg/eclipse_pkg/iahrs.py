@@ -7,7 +7,7 @@ import time
 import os
 import math
 
-# --- 기본 공분산 ---
+# --- 기본 공분산 (최신 분석 결과 반영: 동적 공분산 기반) ---
 BASE_AV_COV  = [4.99e-04, 8.86e-04, 1.65e-04]
 BASE_LA_COV  = [2.14e-02, 5.92e-03, 1.70e-02]
 BASE_ORI_COV = [1.0e-02, 1.0e-02, 5.0e-02]  # Experiment needed.
@@ -19,19 +19,19 @@ MAX_RX_BUFFER_BYTES = 4096
 MIN_IMU_FIELDS = 10
 # 매뉴얼 4.2.21. 현재 스트림은 비트 오름차순: gyro + mag + accel-g + quat.
 SD_GYRO_MAG_ACCEL_QUAT = 0x00B8
-# 하드아이언 중심 (µT). 정지 8방위 LSQ 기준.
+# 하드아이언 중심 (µT). 2026-08-13 정지-측정 8방위 LSQ(처마 아래) 기준.
 # 하드아이언은 위치 의존(처마 -23.98/-2.57 vs 야외 -41.53/-8.35, ~18µT 차이)이라
 # 현장마다 재보정 필요. 야외(-41.53) 반영 시 오히려 오차가 커져 처마 값 유지.
 MAG_HARDIRON_X_UT = -2.25
 MAG_HARDIRON_Y_UT = -2.75
-# 소프트아이언 보정 행렬 (정지 8방위 LSQ, 잔차 ~3°).
+# 소프트아이언 보정 행렬 (2026-08-13 정지-측정 8방위 LSQ, 잔차 ~3°).
 # 실제 왜곡은 거의 원형(축비 1.044, 회전 -0.043, 노이즈 수준) — 기존 선회 피팅의
 # my×1.43은 모터 전류 오염으로 과했고 오히려 왜곡을 만들었다. 단위 행렬로 둔다.
 MAG_SOFTIRON_XX = 1.0
 MAG_SOFTIRON_XY = 0.0
 MAG_SOFTIRON_YX = 0.0
 MAG_SOFTIRON_YY = 1.0
-# 천안 WMM 편각은 서편각(음수). +0.1396(동편각 8°)은 부호 오류.
+# 천안 WMM 편각은 서편각(음수). 기존 +0.1396(동편각 8°)은 부호 오류(2026-08-13 교정).
 MAG_DECLINATION_RAD = -0.14
 # asin(6.5/36.18)^2 — 하드아이언만 뺐을 때 잔여 방위 분산 상한.
 MAG_YAW_VARIANCE = 0.033
@@ -39,7 +39,9 @@ MAG_YAW_VARIANCE = 0.033
 # mz 실측이 z축 하드아이언 오프셋(+36.8µT)으로 신뢰 불가라, V-모델 투영에서 이 값을 쓴다.
 MAG_VERTICAL_UT = 41.4
 # 기울임 홀드: roll/pitch 절대값이 이 각도(도)를 넘으면 mag heading 발행을 멈춘다.
-# 로봇 자체 자기장 왜곡이 자세에 따라 변한다. 실측 pitch 7.6°에서 mag 19° 튐.
+# 로봇 자체(모터·철제) 자기장 왜곡이 자세에 따라 변해 큰 기울임에서 mag 는 신뢰
+# 불가 — EKF 가 마지막 yaw + 각속도 적분으로 유지한다(2026-08-14 결정).
+# 10°로 시작했으나 실측상 pitch 7.6°에서도 mag 가 19° 튀어 5°로 낮춤.
 TILT_HOLD_DEG = 8.0
 
 
@@ -275,7 +277,9 @@ class IahrsDriver(Node):
         try:
             if self.ser.in_waiting > 0:
                 data = self.ser.read(self.ser.in_waiting)
-                # 완전한 라인만 파싱한다. 부분 라인은 다음 틱으로 넘긴다.
+                # 이 틱에 도착한 완전한 라인을 전부 파싱한다. 부분 라인은 버퍼에
+                # 남겨 다음 틱으로 넘긴다(예전에는 splitlines()[-1] 이 잘린 마지막
+                # 줄을 집어 그 틱을 통째로 버렸다).
                 samples, self._rx_buffer = parse_imu_lines(self._rx_buffer, data)
                 if not samples:
                     return

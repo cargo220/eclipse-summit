@@ -1,7 +1,7 @@
 ekf_filter_node:
   ros__parameters:
     # --- 기본 설정 ---
-    frequency: 17.0         # EKF 연산 주기 (Hz). ARM 부하.
+    frequency: 17.0         # EKF 연산 주기 (20→17Hz, ARM 부하 완화)
     two_d_mode: true         # 2D 평면 주행 로봇이므로 Z축(높이) 및 Roll, Pitch 무시
     publish_tf: true         # odom -> base_link로의 TF(Transform) 자동 발행 여부
 
@@ -28,7 +28,7 @@ ekf_filter_node:
                                           # c=5 로 부팅 시 yaw=0 이 박히고 imu0_relative 가
                                           # 첫 메시지를 영구 기준으로 고정하므로 절대 북이
                                           # 아니다. 절대 yaw 는 pose0(/imu/mag_heading)가
-                                          # 유일 소스.
+                                          # 유일 소스. 부팅 bias 구조적 제거(2026-08-13).
                   false, false, false,
                   false, false, true,     # IMU 회전 속도(Yaw) 반영 — 상대량이라 부팅 0점 무관
                   false, false, false]    # IMU 가속도는 속도 추정에 사용하지 않음
@@ -47,8 +47,11 @@ ekf_filter_node:
     odom1_mahalanobis_threshold: 3.0        # GPS 튐 방지용 거름망
 
     # --- 3b. IMU 지자기 기반 절대 heading 설정 ---
-    # iahrs.py가 정지 상태에서도 절대 진북 yaw를 /imu/mag_heading에 발행한다.
-    # GPS PVT heading은 항법 입력에서 제외. /gps/heading은 진단용.
+    # iahrs.py가 정지 상태에서도 안정적인 절대 진북 yaw를 /imu/mag_heading에
+    # 발행한다(frame_id=map, ENU yaw). GPS PVT_HEADMOT(위성 움직임 기반 heading)은
+    # 부트스트랩 creep이 단일 기준국 RTK를 DGNSS로 떨어뜨려 창정렬이 GPS 품질을
+    # 깨는 근본 문제(2026-08-13 핸드오프)로 항법 입력에서 제외하고 지자기 절대
+    # yaw로 대체한다. /gps/heading은 진단/데이터셋용으로만 남긴다.
     pose0: /imu/mag_heading
     pose0_config: [false, false, false,
                    false, false, true,    # 지자기 절대 yaw만 반영
@@ -72,6 +75,11 @@ ekf_filter_node:
     odom2_mahalanobis_threshold: 3.0
 
     # --- 프로세스 노이즈 공분산 (15x15) ---
+    # covariance_analyzer.py 분석 결과 기반
+    # x/y 위치: 0.000282  (정적 GPS 분산 기반)
+    # vx/vy 속도: 0.002822 (동적 오차 변화율 분산 기반)
+    # 나머지: 0.001 (일반 초기값, 실주행 후 조정 필요)
+    #
     # 순서: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
     process_noise_covariance: [0.000186, 0.0,      0.0,     0.0,     0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,
                                0.0,      0.000186, 0.0,     0.0,     0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,      0.0,      0.0,     0.0,     0.0,
