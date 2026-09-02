@@ -779,7 +779,7 @@ class TideWatchNode(Node):
         else:
             self.get_logger().warn(
                 'waterline steps 없음 — 수위선 마커는 비움. '
-                'scripts/bake_tide_waterline.py 로 구워라')
+                'config/waterline_<site>_steps.json 이 있는지 확인해라')
 
     def _recompute_grow_m(self):
         """로드된 keepout 링으로 grow_m을 다시 계산한다."""

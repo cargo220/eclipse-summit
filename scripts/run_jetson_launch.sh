@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/tars_host_ros_logs.sh"
 tars_prepare_host_ros_logs
 
-WORKSPACE="${ECLIPSE_WORKSPACE:-/home/tars/ewooni_docker_6}"
+WORKSPACE="${ECLIPSE_WORKSPACE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 IMAGE="${ECLIPSE_DOCKER_IMAGE:-eclipse-test-2:humble}"
 CONTAINER="${ECLIPSE_CONTAINER_NAME:-eclipse_test3_launch_live}"
 DOMAIN_ID="${ROS_DOMAIN_ID:-27}"

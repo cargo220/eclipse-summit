@@ -437,13 +437,11 @@ HEIGHT_AI_APPLY_DT = HEIGHT_STATUS_DT  # same cadence as publish_height_status
 # NOTE: a proposal-staleness timeout used to live here for the standalone
 # node. In-process there is no transport, so a proposal cannot be stale.
 # Placeholder — no servo rate has been measured yet. Derived conservatively
-# from HEIGHT_DATASET_MOVE_TIMEOUT_SEC (eclipse_ai_config.py: up to 30 mm
-# expected within 3.0 s, i.e. an implicit ~10 mm/s ceiling); halved for
-# margin. Recalibrate once real move-rate data exists.
+# from a 30 mm move in ~3 s (~10 mm/s ceiling), then halved. Recalibrate
+# once real move-rate data exists.
 HEIGHT_AI_MAX_RATE_MM_PER_S = 5.0
 HEIGHT_AI_DEADBAND_MM = 0.5
-# Serve-side /probe/angle freshness. Same numbers as eclipse_ai_config
-# collection gates so train/serve contact labels match.
+# Serve-side /probe/angle freshness. Contact labels must match collection.
 HEIGHT_AI_PROBE_STALE_SEC = 0.5
 HEIGHT_AI_PROBE_CONTACT_ANGLE = 0.0
 HEIGHT_AI_PROBE_CONTACT_TOLERANCE = 3.0

@@ -18,10 +18,11 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
-from eclipse_pkg.eclipse_ai_config import dataset_height_grid_mm
+from eclipse_pkg.height_table import HEIGHT_MAX_DOWN_MM, HEIGHT_MIN_DOWN_MM
 
 
 SCHEMA_ID = "tars-height-outcome-v1"
+HEIGHT_GRID_STEP_MM = 5.0
 DEFAULT_STATE_FEATURES = (
     "cmd_v",
     "cmd_w",
@@ -32,6 +33,22 @@ DEFAULT_STATE_FEATURES = (
     "current_std_avg",
     "probe_angle",
 )
+
+
+def dataset_height_grid_mm():
+    """14–91 mm table range at 5 mm, plus the unaligned max if needed."""
+    step = float(HEIGHT_GRID_STEP_MM)
+    lo = float(HEIGHT_MIN_DOWN_MM)
+    hi = float(HEIGHT_MAX_DOWN_MM)
+    if step <= 0.0:
+        return (lo,)
+    count = int((hi - lo) // step)
+    points = [round(lo + i * step, 6) for i in range(count + 1)]
+    if points[-1] < hi - 1e-9:
+        points.append(hi)
+    return tuple(points)
+
+
 DEFAULT_CANDIDATES_MM = dataset_height_grid_mm()
 OUTCOME_NAMES = ("delta_ekf_speed", "delta_traction_efficiency")
 DEFAULT_EKF_DROP_WEIGHT = 1.0

@@ -1,20 +1,9 @@
 <library path="tars_recovery_behaviors_plugin">
   <!-- name attribute is required: pluginlib class lookup is an exact match on
-       the yaml plugin string ("tars_recovery_behaviors/MudAssess"); without
+       the yaml plugin string ("tars_recovery_behaviors/SetHeight"); without
        it, pluginlib would register the lookup name as the fully qualified
-       type ("tars_recovery_behaviors::MudAssess") and behavior_server would
-       fail to instantiate the plugin. Same pattern as nav2's own
-       behavior_plugin.xml (name="nav2_behaviors/Wait"). -->
-  <class name="tars_recovery_behaviors/MudAssess"
-         type="tars_recovery_behaviors::MudAssess"
-         base_class_type="nav2_core::Behavior">
-    <description>
-      Measurement-only mud assessment behavior (v1): drop-in Wait replacement
-      that records probe angle availability, wheel motor currents and stall
-      state to recovery/mud_assessment during the recovery wait. Never
-      commands velocity; never changes the recovery outcome.
-    </description>
-  </class>
+       type and behavior_server would fail to instantiate the plugin. Same
+       pattern as nav2's own behavior_plugin.xml (name="nav2_behaviors/Wait"). -->
   <class name="tars_recovery_behaviors/SetHeight"
          type="tars_recovery_behaviors::SetHeight"
          base_class_type="nav2_core::Behavior">

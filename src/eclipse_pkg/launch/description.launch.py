@@ -188,11 +188,8 @@ def generate_launch_description():
             parameters=[navsat_config_path],
             remappings=[
                 ('/imu', '/imu/data'),
-                # gps_fix_gate_node (tars_autonomy.launch.py) withholds raw
-                # /gps/fix until heading_calibration_node has corrected EKF
-                # yaw, so this node's one-shot orientation datum lock uses
-                # the calibrated yaw instead of the arbitrary boot-time IMU
-                # yaw. gps_fix_gate_node removed 2026-08-15 — navsat gets /gps/fix directly.
+                # navsat reads /gps/fix directly. EKF yaw comes from
+                # pose0 (/imu/mag_heading), not a one-shot set_pose.
                 ('/odometry/filtered', '/odometry/filtered'),
                 ('/odometry/gps', '/odometry/gps_raw'),
             ],

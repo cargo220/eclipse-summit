@@ -1,6 +1,3 @@
-import os
-
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -32,12 +29,6 @@ def generate_launch_description():
     ])
 
     # Launch Arguments
-    declare_enable_yolo = DeclareLaunchArgument(
-        'enable_yolo',
-        default_value='false',
-        description='Launch YOLOv8 detection node'
-    )
-
     declare_enable_foxglove = DeclareLaunchArgument(
         'enable_foxglove',
         default_value='true',
@@ -61,15 +52,6 @@ def generate_launch_description():
             'keepout_<site>_perimeter.geojson. Default jebu is the lerp '
             'keepout→holes bake. Use tiles (or gps / _) for nationwide '
             'GPS tiles. Keepout geojson is not fed to the costmap.'
-        ),
-    )
-
-    declare_enable_tide_patrol = DeclareLaunchArgument(
-        'enable_tide_patrol',
-        default_value='false',
-        description=(
-            'Wander the dry mudflat during the tide access window. '
-            'Off by default. Sends /navigation/patrol_goal.'
         ),
     )
 
@@ -174,17 +156,6 @@ def generate_launch_description():
         }]
     )
 
-    tide_patrol_node = Node(
-        package=pkg_name,
-        executable='tide_patrol_node',
-        name='tide_patrol',
-        output='screen',
-        condition=IfCondition(LaunchConfiguration('enable_tide_patrol')),
-        parameters=[{
-            'enable_patrol': True,
-        }],
-    )
-
     def _tide_watch_node(context, *args, **kwargs):
         site_raw = str(
             LaunchConfiguration('keepout_site').perform(context) or '').strip()
@@ -245,13 +216,9 @@ def generate_launch_description():
 
     tide_watch_node = OpaqueFunction(function=_tide_watch_node)
 
-    # 4b. EKF yaw is already aligned via pose0 (/imu/mag_heading) in ekf.yaml.
-    # GPS heading bootstrap (heading_calibration_bootstrap_node) and
-    # one-shot set_pose (heading_calibration_node) are NOT needed —
-    # the EKF continuously fuses the magnetometer heading, and
-    # navsat_transform_node uses that yaw (use_odometry_yaw: true).
-    # gps_fix_gate_node is also removed — navsat gets /gps/fix directly.
-    # 2026-08-15: simplified to EKF pose0-only path.
+    # 4b. EKF yaw is aligned via pose0 (/imu/mag_heading) in ekf.yaml.
+    # navsat_transform_node uses that yaw (use_odometry_yaw: true) and
+    # reads /gps/fix directly.
 
     # 4c. Static TF: camera_link → base_link. RealSense publishes internal
     # camera_link → camera_depth_optical_frame, but the link to base_link
@@ -266,16 +233,11 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 4d. Probe angle sensor (Arduino). Same wiring as the probe block in
-    # description_ai.launch.py (package/executable/parameter loading kept).
-    # Parameters come from config/probe_sensor.yaml (/dev/ttyPROBE, 115200);
-    # its top-level key is `probe_sensor`, so the node must keep exactly that
-    # name for the params to apply (probe_sensor.py's internal default name
-    # probe_sensor_node is overridden here on purpose).
-    # Publishes /probe/angle, consumed by the tars_recovery_behaviors/MudAssess
-    # recovery plugin. If the serial device is absent the node retries on its
-    # own reconnect loop; the launch still comes up (verified), so no
-    # condition is needed here.
+    # 4d. Probe angle sensor (Arduino). Parameters from
+    # config/probe_sensor.yaml (/dev/ttyPROBE, 115200). The yaml top-level
+    # key is `probe_sensor`, so the node name must match. Publishes
+    # /probe/angle for the in-process height policy. Missing serial is
+    # retried inside the node; launch still comes up.
     probe_sensor_node = Node(
         package=pkg_name,
         executable='probe_sensor',
@@ -283,13 +245,6 @@ def generate_launch_description():
         output='screen',
         parameters=[probe_sensor_yaml]
     )
-
-    # NOTE: the GPS heading bootstrap (heading_calibration_bootstrap_node) was
-    # REMOVED on 2026-08-13 — its blind creep degraded single-base RTK to
-    # DGNSS and is unnecessary now that mag_heading_calibration_node aligns
-    # yaw from a stationary magnetometer heading. `max_attempts=0` would NOT
-    # have disabled it (the node still runs one creep), so the node itself was
-    # removed rather than tuned.
 
     # 5. Remote UI (Foxglove Bridge)
     # 광고 목록은 config/foxglove_bridge.yaml. 수다/수명주기·원본 카메라 제외.
@@ -307,18 +262,6 @@ def generate_launch_description():
         parameters=[foxglove_params],
     )
 
-    # 6. Optional: YOLOv8 Integration
-    yolo_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare(pkg_name),
-                'launch',
-                'yolo_detect.launch.py',
-            ])
-        ]),
-        condition=IfCondition(LaunchConfiguration('enable_yolo'))
-    )
-
     pointcloud_filter = Node(
         package=pkg_name,
         executable='pointcloud_filter_node',
@@ -327,11 +270,9 @@ def generate_launch_description():
     )
 
     ld = LaunchDescription([
-        declare_enable_yolo,
         declare_enable_foxglove,
         declare_tide_gps_topic,
         declare_keepout_site,
-        declare_enable_tide_patrol,
         declare_waterline_alpha_override,
         base_launch,
         realsense_launch,
@@ -340,10 +281,8 @@ def generate_launch_description():
         gps_commander_node,
         gps_health_supervisor_node,
         tide_watch_node,
-        tide_patrol_node,
         camera_tf,
         probe_sensor_node,
         foxglove_bridge_node,
-        yolo_launch
     ])
     return ld

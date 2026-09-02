@@ -22,7 +22,6 @@ find_package(nav2_util REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(behaviortree_cpp_v3 REQUIRED)
-find_package(eclipse_pkg_msgs REQUIRED)
 
 set(dependencies
   rclcpp
@@ -38,11 +37,9 @@ set(dependencies
   tf2_ros
   pluginlib
   behaviortree_cpp_v3
-  eclipse_pkg_msgs
 )
 
 add_library(tars_recovery_behaviors_plugin SHARED
-  src/mud_assess.cpp
   src/set_height.cpp
   src/stall_detector.cpp
   src/slip_detector.cpp

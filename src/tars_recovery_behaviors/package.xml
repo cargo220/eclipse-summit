@@ -4,15 +4,8 @@
   <name>tars_recovery_behaviors</name>
   <version>0.2.0</version>
   <description>
-    TARS custom Nav2 recovery behaviors. v1 ships MudAssess, a
-    measurement-only drop-in replacement for the stock Wait behavior that
-    records mudflat signals (probe angle availability, wheel motor currents,
-    stall state) during recovery waits; record only: it never commands
-    velocity and never changes the recovery outcome. v2 adds StallDetector,
-    a BehaviorTree.CPP v3 ConditionNode that classifies FollowPath failures
-    (stall-in-mud vs obstacle/unknown) so the recovery fallback trees can
-    branch; fail-open: missing window data falls through to the default
-    obstacle branch.
+    TARS custom Nav2 recovery: SetHeight plus BT classifiers
+    (StallDetector, SlipDetector, CostmapBlockedDetector, RecoveryAnnounce).
   </description>
   <maintainer email="lee@todo.todo">lee</maintainer>
   <license>Proprietary</license>
@@ -32,7 +25,6 @@
   <depend>tf2_ros</depend>
   <depend>pluginlib</depend>
   <depend>behaviortree_cpp_v3</depend>
-  <depend>eclipse_pkg_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

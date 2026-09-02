@@ -6,7 +6,7 @@
 # Load notes (2026-08-10 perf on Xavier):
 # - Colored pointcloud + DDS publish was a top native hotspot.
 # - image_transport theora/compressed on color+depth multiplied CPU further.
-# Costmap + pointcloud_filter only need XYZ raw points; YOLO needs raw color.
+# Costmap + pointcloud_filter only need XYZ raw points.
 
 # --- Point cloud (XYZ for costmap; RGB texture not required) ---
 pointcloud__neon_.enable: true
@@ -24,7 +24,7 @@ decimation_filter.filter_magnitude: 2
 decimation_filter.frames_queue_size: 4
 
 # --- image_transport: raw only (drop compressed / theora / compressedDepth) ---
-# YOLO and yolo_3d subscribe to raw Image; Foxglove can use raw or its own compress.
+# Foxglove can use raw or its own compress.
 camera.color.image_raw.enable_pub_plugins:
   - image_transport/raw
 camera.aligned_depth_to_color.image_raw.enable_pub_plugins:

@@ -17,7 +17,7 @@ Jetson에서 이미지 `eclipse-test-2:humble`가 있어야 한다. 없으면 `d
 ./scripts/build_jetson_workspace.sh
 ```
 
-컨테이너 안에서 직접 할 때:
+헬퍼는 `build_trt` / `install_trt`에 넣는다. 컨테이너 안에서 직접 할 때:
 
 ```bash
 cd /workspaces/eclipse-test-2
@@ -29,14 +29,15 @@ source install_trt/setup.bash
 
 ## 기동
 
+`description`과 `autonomy`를 동시에 돌리지 말 것. 둘 다 `eclipse_test_controller`를 띄운다.
+
 ```bash
-./scripts/run_jetson_autonomy.sh          # 제부 수위선 기본
-./scripts/run_jetson_autonomy.sh tiles    # 전국 GPS 타일
-ENABLE_YOLO_TRT=true ./scripts/run_jetson_autonomy.sh
+./scripts/run_jetson_description.sh     # GPS/IMU/EKF/모터
+./scripts/run_jetson_autonomy.sh        # 제부 수위선 + Nav2
 ./scripts/run_jetson_autonomy.sh stop
 ```
 
-기본 `keepout_site=jebu`. YOLO sidecar는 `imgsz=640` (merged5 엔진). 조사 격자 노드는 이 트리에 없다.
+기본 `keepout_site=jebu`. 워크스페이스 기본값은 이 리포 루트 (`ECLIPSE_WORKSPACE`로 덮어쓰기).
 
 ## 실차 숫자 (2026-09)
 

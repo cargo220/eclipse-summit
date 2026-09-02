@@ -16,9 +16,8 @@ navsat_transform_node:
     magnetic_declination_radians: 0.0
 
     # UTM->map 방위 datum 을 EKF 필터링 yaw(/odometry/filtered)에서 잠근다.
-    # false(기본)면 /imu/data 의 raw 쿼터니언(부팅 0점)을 쓰므로, gps_fix_gate_node 가
-    # fix 를 늦춰도 datum 이 부팅 방향에 잠긴다(robot_localization 소스 실측 2026-08-13).
-    # true 로 바꿔 done(지자기 set_pose) 후 보정된 yaw 를 datum 으로 쓴다.
+    # false(기본)면 /imu/data 의 raw 쿼터니언(부팅 0점)을 쓴다.
+    # EKF pose0 이 /imu/mag_heading 을 쓰므로 true 가 맞다.
     use_odometry_yaw: true
 
     # IMU yaw=0 기준점 설정.

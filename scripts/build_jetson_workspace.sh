@@ -28,5 +28,7 @@ exec docker run --rm \
   "$IMAGE" \
   bash -lc '
     cd /workspaces/eclipse-test-2
-    colcon build --symlink-install
+    colcon build --symlink-install \
+      --packages-select eclipse_pkg_msgs eclipse_pkg tars_recovery_behaviors tars_tide_layer \
+      --build-base build_trt --install-base install_trt
   '

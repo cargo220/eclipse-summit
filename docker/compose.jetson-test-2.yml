@@ -20,4 +20,4 @@ services:
     command:
       - bash
       - -lc
-      - cd /workspaces/eclipse-test-2 && source install/setup.bash && ros2 launch eclipse_pkg description.launch.py
+      - cd /workspaces/eclipse-test-2 && source install_trt/setup.bash && ros2 launch eclipse_pkg description.launch.py

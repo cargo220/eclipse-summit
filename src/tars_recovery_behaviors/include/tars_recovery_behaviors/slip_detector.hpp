@@ -3,7 +3,7 @@
 // SLIP (헛돌기) = wheels keep turning but GNSS body barely advances.
 // Distinct from STALL (wheel/motor nearly stopped under load).
 //
-//   SUCCESS -> slip recovery branch (height/speed policy later; v1 mud_assess)
+//   SUCCESS -> slip recovery branch (Wait + SetHeight + BackUp)
 //   FAILURE -> obstacle / default branch
 //
 // Signals:

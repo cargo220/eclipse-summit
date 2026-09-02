@@ -2,7 +2,7 @@
 //
 // SetHeight — publishes a target probe/actuator height to /drive/height_step_mm
 // at the start of a recovery episode, then waits a fixed duration. Same
-// skeleton as MudAssess (TimedBehavior<nav2_msgs::action::Wait>). The wait
+// TimedBehavior<nav2_msgs::action::Wait>. The wait
 // duration is read from the set_height.wait_duration parameter and the countdown
 // simply runs until it elapses; no height-arrival confirmation is performed.
 

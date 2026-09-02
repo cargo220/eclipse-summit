@@ -4,9 +4,9 @@
 // actuator) by publishing a target height on /drive/height_step_mm during a
 // recovery episode, then waits a fixed duration.
 //
-// Design (same skeleton as MudAssess):
+// Design:
 //   - derives from nav2_behaviors::TimedBehavior<nav2_msgs::action::Wait>, so
-//     BT trees can route to it the same way they route to Wait / MudAssess,
+//     BT trees can route to it the same way they route to Wait,
 //   - onRun() publishes <Float32> target_height on /drive/height_step_mm,
 //   - onCycleUpdate() only runs the base Wait countdown — it never inspects
 //     whether the height was actually reached,
@@ -55,7 +55,7 @@ protected:
   WaitAction::Feedback::SharedPtr feedback_;
 
   // Parameters (read within the behavior_server node namespace,
-  // "set_height." plugin prefix — MudAssess pattern).
+  // "set_height." plugin prefix.
   double target_height_mm_{30.0};
   double wait_duration_{2.0};
   bool enable_{true};

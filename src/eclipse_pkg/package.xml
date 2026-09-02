@@ -15,13 +15,11 @@
   <depend>geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
-  <depend>cv_bridge</depend>
   <depend>robot_localization</depend>
   <depend>geographic_msgs</depend>
   <exec_depend>joy</exec_depend>
   <exec_depend>usb_cam</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
-  <exec_depend>vision_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>nav2_msgs</exec_depend>
 
