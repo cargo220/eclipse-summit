@@ -5,13 +5,11 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ros-humble-joy \
-        ros-humble-usb-cam \
         ros-humble-navigation2 \
         ros-humble-nav2-bringup \
         ros-humble-foxglove-bridge \
         ros-humble-realsense2-camera \
         ros-humble-diagnostic-updater \
-        ros-humble-vision-msgs \
         python3-pyproj \
         python3-shapely \
         python3-pip \

@@ -3,9 +3,9 @@
 <package format="3">
   <name>eclipse_pkg_msgs</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="lee@todo.todo">lee</maintainer>
-  <license>TODO: License declaration</license>
+  <description>TARS custom messages: PresentCurrent, GpsGoal</description>
+  <maintainer email="ley184526@icloud.com">cargo220</maintainer>
+  <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

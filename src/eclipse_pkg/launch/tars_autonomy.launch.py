@@ -81,7 +81,6 @@ def generate_launch_description():
             ])
         ]),
         launch_arguments={
-            'enable_front_camera': 'false',  # RealSense replaces usb_cam.
             'enable_gamepad_drive': 'true',
             'gamepad_cmd_vel_topic': '/cmd_vel',
         }.items()

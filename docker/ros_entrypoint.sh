@@ -17,10 +17,6 @@ if [ "$sourced_ros" != true ]; then
   exit 1
 fi
 
-if [ -f /opt/usb_cam_ws/install/setup.bash ]; then
-  source /opt/usb_cam_ws/install/setup.bash
-fi
-
 if [ -f /workspaces/eclipse-test-2/install_trt/setup.bash ]; then
   source /workspaces/eclipse-test-2/install_trt/setup.bash
 elif [ -f /workspaces/eclipse-test-2/install/setup.bash ]; then

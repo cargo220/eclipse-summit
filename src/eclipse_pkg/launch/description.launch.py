@@ -4,18 +4,15 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
     pkg_name = 'eclipse_pkg'
-    enable_front_camera = LaunchConfiguration('enable_front_camera')
     enable_gamepad_drive = LaunchConfiguration('enable_gamepad_drive')
     enable_joy_node = LaunchConfiguration('enable_joy_node')
-    enable_keyboard_teleop = LaunchConfiguration('enable_keyboard_teleop')
-    front_camera_device = LaunchConfiguration('front_camera_device')
     joy_device = LaunchConfiguration('joy_device')
     joy_deadzone = LaunchConfiguration('joy_deadzone')
     joy_autorepeat_rate = LaunchConfiguration('joy_autorepeat_rate')
@@ -68,24 +65,6 @@ def generate_launch_description():
                 'Empty or invalid = stub hold. A skeleton (zero weights) '
                 'loads the grid path but still holds the current height.'
             ),
-        ),
-
-        DeclareLaunchArgument(
-            'enable_front_camera',
-            default_value='false',
-            description='Start the front usb_cam image_raw publisher.',
-        ),
-
-        DeclareLaunchArgument(
-            'front_camera_device',
-            default_value='/dev/video4',
-            description='Video device path for the front camera.',
-        ),
-
-        DeclareLaunchArgument(
-            'enable_keyboard_teleop',
-            default_value='false',
-            description='Start keyboard teleop. Off by default when gamepad_drive publishes /cmd_vel.',
         ),
 
         DeclareLaunchArgument(
@@ -238,36 +217,6 @@ def generate_launch_description():
                 'button_linear_step': 0.05,
                 'cmd_vel_topic': gamepad_cmd_vel_topic,
             }],
-        ),
-
-        Node(
-            package='usb_cam',
-            executable='usb_cam_node_exe',
-            namespace='camera',
-            name='front_camera',
-            condition=IfCondition(enable_front_camera),
-            output='screen',
-            parameters=[{
-                'video_device': front_camera_device,
-                'image_width': 640,
-                'image_height': 480,
-                'framerate': 30.0,
-                'pixel_format': 'yuyv',
-                'frame_id': 'camera_link',
-                'skip_device_check': True,
-            }],
-        ),
-
-        # plotjuggler removed: headless Jetson aborts (no DISPLAY) and only
-        # produces process-has-died noise; use laptop-side PlotJuggler if needed.
-
-        Node(
-            package='teleop_twist_keyboard',
-            executable='teleop_twist_keyboard',
-            name='teleop',
-            condition=IfCondition(enable_keyboard_teleop),
-            prefix='xterm -e',
-            output='screen',
         ),
 
     ])
